@@ -57,8 +57,9 @@ test("clicking the Sessions title refreshes the saved session list", async () =>
   panel.refresh();
   await flushAsync();
   assert.match(panel.render(40).join("\n"), /Old session/);
-  assert.match(panel.render(40).join("\n"), /1 · now/, "Sessions rows show user questions only");
-  assert.match(panel.render(40)[0]!, /SESSIONS ↻/);
+  assert.match(panel.render(40).join("\n"), /сейчас/, "Sessions rows retain relative time");
+  assert.doesNotMatch(panel.render(40).join("\n"), /1 · сейчас/, "Sessions rows omit the user-question count");
+  assert.match(panel.render(40)[0]!, /СЕССИИ ↻/);
 
   assert.deepEqual(listener?.("\u001b[<0;20;6M"), { consume: true });
   assert.deepEqual(listener?.("\u001b[<0;20;6m"), { consume: true });
@@ -104,8 +105,8 @@ test("renders and opens the MCP resource button", async () => {
 
   panel.refresh();
   await flushAsync();
-  assert.match(panel.render(40).join("\n"), /AGENTS/, "resource button should display AGENTS");
-  assert.doesNotMatch(panel.render(40).join("\n"), /AGENTS\.md/, "the displayed button must be shortened only");
+  assert.match(panel.render(40).join("\n"), /Правила/, "resource button should display a Russian label");
+  assert.doesNotMatch(panel.render(40).join("\n"), /AGENTS\.md/, "the resource button should not display the file name");
   assert.match(panel.render(40).join("\n"), /MCP/);
 
   assert.deepEqual(listener?.("\u001b[<0;43;9M"), { consume: true });
@@ -278,7 +279,7 @@ test("opens advanced manager from ≡ without triggering refresh or bulk trash",
   panel.dispose();
 });
 
-test("pinned session remains visible ahead of the five-item sidebar limit", async () => {
+test("pinned and recent sessions remain visible in the expanded sidebar list", async () => {
   const tui = { addInputListener: () => () => {}, requestRender() {} } as any;
   const panel = new SessionPanel(theme, {
     tui, getDesiredWidth: () => 42,
@@ -294,7 +295,8 @@ test("pinned session remains visible ahead of the five-item sidebar limit", asyn
   const output = panel.render(42).join("\n");
   assert.match(output, /○ ★Important/);
   assert.match(output, /Recent 3/);
-  assert.doesNotMatch(output, /Recent 4/);
+  assert.match(output, /Recent 4/);
+  assert.match(output, /Recent 14/);
   panel.dispose();
 });
 
@@ -328,7 +330,7 @@ test("session row ☆/★ toggles pin in place without invoking rename, delete o
     },
   };
   const click = (text: string) => {
-    const row = panel.render(40)[1]!;
+    const row = stripTerminalSequences(panel.render(40)[1]!);
     const column = row.lastIndexOf(text);
     assert.ok(column > 0, `missing button ${text}: ${row}`);
     const x = 10 + column + 1;

@@ -11,7 +11,7 @@ test("sidebar ignores hidden divider hits and cancels drags after terminal resiz
   const root = { render: () => [], invalidate() {} };
   const tui: any = {
     [Symbol.for("@earendil-works/pi-tui/viewport")]: true,
-    terminal: { columns: 100, rows: 40 }, layoutRoot: root,
+    terminal: { columns: 80, rows: 40 }, layoutRoot: root,
     inputListeners: listeners,
     addInputListener(fn: any) { listeners.add(fn); return () => listeners.delete(fn); },
     setLayoutRoot(next: any) { this.layoutRoot = next; },
@@ -25,12 +25,12 @@ test("sidebar ignores hidden divider hits and cancels drags after terminal resiz
     assert.equal(input("\x1b[<0;80;5M"), undefined);
     assert.equal(overlays, 0);
     tui.terminal.columns = 160;
-    assert.deepEqual(input("\x1b[<0;140;5M"), { consume: true });
+    assert.deepEqual(input("\x1b[<0;142;5M"), { consume: true });
     assert.deepEqual(input("\x1b[<0;130;5m"), { consume: true });
     assert.equal(tui.layoutRoot.entries[2].basis, 30);
     assert.equal(hidden, 1);
     assert.deepEqual(input("\x1b[<0;130;5M"), { consume: true });
-    tui.terminal.columns = 100;
+    tui.terminal.columns = 80;
     await delay(50);
     assert.equal(hidden, 2);
     assert.equal(input("\x1b[<0;70;5m"), undefined);

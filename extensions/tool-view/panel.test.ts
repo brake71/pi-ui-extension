@@ -49,12 +49,12 @@ test("renders separate Direct and Nested groups for same-named tool calls", () =
     onSelect() {},
   });
   const rendered = panel.render(54).join("\n");
-  assert.match(rendered, /DIRECT TOOLS[\s\S]*codemode\s+1\/2[\s\S]*read\s+1\/2/);
-  assert.match(rendered, /NESTED TOOLS[\s\S]*read\s+3\/8/);
-  assert.match(rendered, /NESTED TOOLS[\s\S]*bash\s+5\/30/);
+  assert.match(rendered, /ВЫЗОВЫ[\s\S]*codemode\s+1\/2[\s\S]*read\s+1\/2/);
+  assert.match(rendered, /ВЛОЖЕННЫЕ[\s\S]*read\s+3\/8/);
+  assert.match(rendered, /ВЛОЖЕННЫЕ[\s\S]*bash\s+5\/30/);
   assert.match(rendered, /MCP[\s\S]*docs\s+1\/2/);
-  assert.ok(rendered.indexOf("DIRECT TOOLS") < rendered.indexOf("NESTED TOOLS"));
-  assert.ok(rendered.indexOf("NESTED TOOLS") < rendered.indexOf("MCP"));
+  assert.ok(rendered.indexOf("ВЫЗОВЫ") < rendered.indexOf("ВЛОЖЕННЫЕ"));
+  assert.ok(rendered.indexOf("ВЛОЖЕННЫЕ") < rendered.indexOf("MCP"));
   panel.dispose();
 });
 
@@ -75,13 +75,13 @@ test("summary retains Run/Total but group headers omit redundant subtotals", () 
     onSelect() {},
   });
   const rendered = panel.render(56);
-  assert.match(rendered.join("\n"), /RUN\s+TOTAL/);
+  assert.match(rendered.join("\n"), /СЕЙЧАС\s+ВСЕГО/);
   assert.match(rendered.join("\n"), /\n[^\n]*7\s+45\s*│/);
-  const directHeader = rendered.find((line) => line.includes("DIRECT TOOLS"));
-  const nestedHeader = rendered.find((line) => line.includes("NESTED TOOLS"));
+  const directHeader = rendered.find((line) => line.includes("ВЫЗОВЫ"));
+  const nestedHeader = rendered.find((line) => line.includes("ВЛОЖЕННЫЕ"));
   const mcpHeader = rendered.find((line) => line.includes("MCP ·"));
-  assert.match(directHeader ?? "", /DIRECT TOOLS · 2/);
-  assert.match(nestedHeader ?? "", /NESTED TOOLS · 2/);
+  assert.match(directHeader ?? "", /ВЫЗОВЫ · 2/);
+  assert.match(nestedHeader ?? "", /ВЛОЖЕННЫЕ · 2/);
   assert.match(mcpHeader ?? "", /MCP · 1/);
   for (const header of [directHeader, nestedHeader, mcpHeader]) {
     assert.doesNotMatch(header ?? "", /\d+\/\d+/, "no redundant Run/Total in group headers");
@@ -147,20 +147,20 @@ test("long tool names and group labels adapt to narrow terminal widths without w
 test("keeps the mode selector visible alongside Tool and MCP usage", () => {
   const lines = renderPanel();
   const output = lines.join("\n");
-  assert.match(lines[0] ?? "", /VIEW/);
+  assert.match(lines[0] ?? "", /ОТОБРАЖЕНИЕ/);
   assert.doesNotMatch(lines[0] ?? "", /TOOL VIEW/);
   assert.equal(lines.length, 12);
-  assert.match(lines[1] ?? "", /Normal.*Compact.*Hidden/);
+  assert.match(lines[1] ?? "", /Полный.*Краткий.*Скрытый/);
   assert.equal(lines[2], `├${"─".repeat(58)}┤`, "mode separator must reach both borders with no padding");
-  assert.match(lines[3] ?? "", /RUN\s+TOTAL/);
-  assert.match(output, /DIRECT TOOLS · 1/);
+  assert.match(lines[3] ?? "", /СЕЙЧАС\s+ВСЕГО/);
+  assert.match(output, /ВЫЗОВЫ · 1/);
   assert.match(output, /MCP · 1/);
-  assert.doesNotMatch(lines.find((line) => line.includes("DIRECT TOOLS")) ?? "", /\d+\/\d+/);
+  assert.doesNotMatch(lines.find((line) => line.includes("ВЫЗОВЫ")) ?? "", /\d+\/\d+/);
   assert.doesNotMatch(lines.find((line) => line.includes("MCP ·")) ?? "", /\d+\/\d+/);
-  assert.match(output, /Normal/);
-  assert.match(output, /Compact/);
-  assert.match(output, /Hidden/);
-  assert.match(output, /TOOLS/);
+  assert.match(output, /Полный/);
+  assert.match(output, /Краткий/);
+  assert.match(output, /Скрытый/);
+  assert.match(output, /ВЫЗОВЫ/);
   assert.match(output, /read/);
   assert.match(output, /MCP/);
   assert.match(output, /context-mode/);

@@ -115,25 +115,30 @@ export function renderCodemodeCompactResult(
   }
   // The outer call may succeed even when a nested tool fails or is cancelled.
   const partialFailure = statuses.error > 0 || statuses.cancelled > 0;
-  const status = options.isPartial ? "… Running"
-    : context.isError ? "✗ Failed"
-    : partialFailure ? "! Partial" : "";
+  const status = options.isPartial ? "… Выполняется"
+    : context.isError ? "✗ Ошибка"
+    : partialFailure ? "! Частично" : "";
   const stateColor = options.isPartial || (partialFailure && !context.isError)
     ? "warning" : context.isError ? "error" : "success";
   const metrics: Metric[] = [];
-  const countLabel = (count: number, singular: string): string => `${count} ${singular}${count === 1 ? "" : "s"}`;
-  if (calls.length > 0) metrics.push({ label: countLabel(calls.length, "call"), color: "text", group: "calls", priority: 1 });
-  if (statuses.ok) metrics.push({ label: `${statuses.ok} ok`, color: "success", group: "calls", priority: 5 });
-  if (statuses.error) metrics.push({ label: `${statuses.error} failed`, color: "error", group: "calls", priority: 2 });
-  if (statuses.cancelled) metrics.push({ label: `${statuses.cancelled} cancelled`, color: "muted", group: "calls", priority: 3 });
-  if (statuses.running) metrics.push({ label: `${statuses.running} running`, color: "warning", group: "calls", priority: 3 });
+  const countLabel = (count: number, forms: readonly [string, string, string]): string => {
+    const mod100 = count % 100, mod10 = count % 10;
+    const form = mod100 >= 11 && mod100 <= 14 ? forms[2]
+      : mod10 === 1 ? forms[0] : mod10 >= 2 && mod10 <= 4 ? forms[1] : forms[2];
+    return `${count} ${form}`;
+  };
+  if (calls.length > 0) metrics.push({ label: countLabel(calls.length, ["вызов", "вызова", "вызовов"]), color: "text", group: "calls", priority: 1 });
+  if (statuses.ok) metrics.push({ label: `${statuses.ok} успешн.`, color: "success", group: "calls", priority: 5 });
+  if (statuses.error) metrics.push({ label: `${statuses.error} ошибок`, color: "error", group: "calls", priority: 2 });
+  if (statuses.cancelled) metrics.push({ label: `${statuses.cancelled} отменено`, color: "muted", group: "calls", priority: 3 });
+  if (statuses.running) metrics.push({ label: `${statuses.running} выполняется`, color: "warning", group: "calls", priority: 3 });
   if (!options.isPartial) {
     const { lines, images } = countContent(result);
     if (lines) metrics.push({
-      label: countLabel(lines, "line"), shortLabel: `${lines} out`,
+      label: countLabel(lines, ["строка", "строки", "строк"]), shortLabel: `${lines} выв.`,
       color: "muted", group: "output", priority: 6,
     });
-    if (images) metrics.push({ label: countLabel(images, "image"), color: "muted", group: "output", priority: 7 });
+    if (images) metrics.push({ label: countLabel(images, ["изображение", "изображения", "изображений"]), color: "muted", group: "output", priority: 7 });
   }
   // Pi provides durationMs only after completion; partial rows show an
   // estimated elapsed time since their first observed partial result.

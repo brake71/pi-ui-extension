@@ -55,8 +55,8 @@ test("applies a mode change from another context wrapper in the active session",
 
     assert.equal(controller.getMode(), "normal");
     assert.deepEqual(JSON.parse(await readFile(modeFile, "utf8")), { mode: "normal" });
-    assert.equal(statuses.at(-1), "Tool View: Normal");
-    assert.equal(notices.at(-1), "Tool View: Normal");
+    assert.equal(statuses.at(-1), "Отображение инструментов: Полный");
+    assert.equal(notices.at(-1), "Отображение инструментов: Полный");
     assert.deepEqual(expandedValues.slice(-2), [true, false]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -102,7 +102,7 @@ test("the single Tool View mode controls Thinking, persists once, and refreshes 
     const controller = await installToolViewController(pi, { modeFile });
     assert.equal(controller.getMode(), "compact");
     assert.equal(typeof transformer, "function");
-    assert.equal(transform("private thought"), "+ Thought", "unmeasured Thinking collapses to the title");
+    assert.equal(transform("private thought"), "+ Размышление", "unmeasured Thinking collapses to the title");
     for (const callback of handlers.get("session_start") ?? []) callback({}, ctx);
     assert.equal(handlers.has("message_update"), true, "registered stream timing observer");
     const partial = { role: "assistant", content: [{ type: "thinking", thinking: "private thought" }] };
@@ -111,21 +111,21 @@ test("the single Tool View mode controls Thinking, persists once, and refreshes 
         callback({ assistantMessageEvent: { type, contentIndex: 0, partial } }, ctx);
       }
     }
-    assert.match(transform("private thought"), /^\+ Thought · \d\.\ds$/, "thinking_end supplies the measured time");
+    assert.match(transform("private thought"), /^\+ Размышление · \d\.\ds$/, "thinking_end supplies the measured time");
     for (const callback of handlers.get("message_end") ?? []) callback({ message: partial }, ctx);
-    assert.match(transform("private thought"), /^\+ Thought · \d\.\ds$/, "the measured time survives message_end");
+    assert.match(transform("private thought"), /^\+ Размышление · \d\.\ds$/, "the measured time survives message_end");
 
     await controller.setMode("normal", ctx);
     assert.equal(transformer("private thought", context), "private thought");
     await commands.get("tool-view").handler("hidden", ctx);
-    assert.match(transform("private thought"), /^Thought · \d\.\ds$/, "Hidden has no disclosure glyph");
+    assert.match(transform("private thought"), /^Размышление · \d\.\ds$/, "Hidden has no disclosure glyph");
     assert.equal(controller.getMode(), "hidden");
     assert.deepEqual(JSON.parse(await readFile(modeFile, "utf8")), { mode: "hidden" });
     assert.equal(refreshed, 2, "one public refresh per mode change, including historical Thinking");
     assert.deepEqual(expanded, [true, false, true, false], "tool transcript refresh still occurs");
     assert.equal(commands.has("thinking-view"), false, "no separate Thinking command");
     assert.equal(registeredToolDefinitions, 0);
-    assert.match(notices.join("\n"), /Tool View: Hidden/);
+    assert.match(notices.join("\n"), /Отображение инструментов: Скрытый/);
 
     const restarted = await installToolViewController(pi, { modeFile });
     assert.equal(restarted.getMode(), "hidden", "existing mode file persists Thinking and Tools together");
@@ -195,7 +195,7 @@ test("unified Tool View warns if Pi hides Thinking natively without breaking too
     await controller.setMode("normal", ctx);
     assert.equal(controller.getMode(), "normal");
     assert.match(notices.join("\n"), /hideThinkingBlock: false/);
-    assert.match(notices.join("\n"), /cannot transform Thinking display/);
+    assert.match(notices.join("\n"), /не поддерживает изменение отображения рассуждений/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -270,7 +270,7 @@ test("Compact Thinking supplies the tool gap only for a tool whose leading blank
       role: "assistant", stopReason: "stop",
       content: [{ type: "thinking", thinking: "Body text." }, { type: "toolCall", id: "1", name: toolName, arguments: {} }],
     } as any, false);
-    const title = message.render(64).map(stripTerminalSequences).findIndex((line) => line.includes("Thought"));
+    const title = message.render(64).map(stripTerminalSequences).findIndex((line) => line.includes("Размышление"));
     assert.ok(title >= 0, "the Compact title renders");
     message.handleMouse?.({
       type: "click", button: "left", x: 1, y: title, screenX: 1, screenY: title,
@@ -297,7 +297,7 @@ test("Compact Thinking supplies the tool gap only for a tool whose leading blank
   const own = expand("bash", ownTool("bash"));
   assert.notEqual(own[1].render(64)[0], "", "the guard trims its own tool's leading blank");
   assert.equal(gapAfterBody(own), 1, "the body supplies exactly one gap before its own tool");
-  assert.match(own[0].at(-1)!, /1 line/, "the compact tool still renders its result");
+  assert.match(own[0].at(-1)!, /1 строка/, "the compact tool still renders its result");
   // A third-party tool keeps Pi's own leading blank; the body must not add one.
   const foreign = expand("mcp__server__search", thirdPartyTool());
   assert.equal(gapAfterBody(foreign), 1, "no second gap before a third-party tool");

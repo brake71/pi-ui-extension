@@ -27,12 +27,12 @@ test("sidebar reads each owned panel once per width per frame without retaining 
     ctxReads = usageReads = 0;
     const first = renderLayoutFrame(tui.layoutRoot, 200, 40, () => {});
     assert.equal(ctxReads, 1);
-    assert.equal(usageReads, 1);
+    assert.equal(usageReads, 0, "collapsed Tool View does not render its hidden content");
     assert.match(first.lines.join("\n"), /initial/);
     model = "changed"; count = 0;
     const second = renderLayoutFrame(tui.layoutRoot, 200, 40, () => {});
     assert.equal(ctxReads, 2);
-    assert.equal(usageReads, 2);
+    assert.equal(usageReads, 0, "collapsed Tool View remains lazy across frames");
     assert.match(second.lines.join("\n"), /changed/);
     assert.doesNotMatch(second.lines.join("\n"), /tool_0/);
     tui.terminal.rows = 25;

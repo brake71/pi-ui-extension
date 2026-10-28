@@ -72,12 +72,16 @@ export function installCompactSpacingGuard(getMode: () => ToolViewMode): boolean
   // Pi's bundled CLI minifies event.y - 1 to event.y-1; both are supported.
   if (!hasCompatibleSelfToolLayout({ render: originalRender, handleMouse: originalMouse })) return false;
   const trimmed = new WeakMap<ToolExecutionComponent, boolean>();
-  const eligible = (tool: ToolInstance): boolean =>
-    getMode() === "compact" &&
-    tool.toolDefinition?.renderShell === "self" &&
-    tool.toolDefinition?.[OWNER_KEY] === true;
+  const isOwnedTool = (tool: ToolInstance): boolean =>
+    tool.toolDefinition?.renderShell === "self" && tool.toolDefinition?.[OWNER_KEY] === true;
+  const eligible = (tool: ToolInstance): boolean => getMode() === "compact" && isOwnedTool(tool);
+  const hidden = (tool: ToolInstance): boolean => getMode() === "hidden" && isOwnedTool(tool);
 
   const patchedRender: typeof originalRender = function (this: ToolExecutionComponent, ...args) {
+    if (hidden(this as unknown as ToolInstance)) {
+      trimmed.set(this, false);
+      return [];
+    }
     const lines = originalRender.apply(this, args);
     // A single leading empty row is the exact layout invariant in both SDKs.
     const compact = eligible(this as unknown as ToolInstance) && lines.length > 1 && lines[0] === "";
@@ -85,6 +89,7 @@ export function installCompactSpacingGuard(getMode: () => ToolViewMode): boolean
     return compact ? lines.slice(1) : lines;
   };
   const patchedMouse: typeof originalMouse = function (this: ToolExecutionComponent, event) {
+    if (hidden(this as unknown as ToolInstance)) return undefined;
     if (trimmed.get(this) && eligible(this as unknown as ToolInstance) && event.y >= 0) {
       return originalMouse.call(this, { ...event, y: event.y + 1, height: event.height + 1 });
     }

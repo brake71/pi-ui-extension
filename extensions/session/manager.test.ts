@@ -45,7 +45,8 @@ test("pins persist atomically with private permissions and invalid contents are 
     assert.equal(toggleSessionPin(path, "some-id"), true);
     assert.equal(toggleSessionPin(path, "next-id"), true);
     assert.deepEqual([...readSessionPins(path)], ["some-id", "next-id"]);
-    assert.equal(statSync(path).mode & 0o777, 0o600);
+    if (process.platform !== "win32") assert.equal(statSync(path).mode & 0o777, 0o600);
+    else assert.ok(statSync(path).mode & 0o200, "the pin file remains writable under Windows ACLs");
     assert.equal(toggleSessionPin(path, "some-id"), false);
     assert.deepEqual([...readSessionPins(path)], ["next-id"]);
     assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), ["next-id"]);
@@ -86,14 +87,14 @@ test("manager can navigate pages, pin and unpin, and switch using the selected s
   let changes = 0;
   const all = Array.from({ length: 21 }, (_, index) => session(`id-${index}`, index * 1000));
   const { ui, viewed, notices } = scriptedUI([
-    (_title, choices) => choices.find((item) => item === "下一页 →"),
-    (_title, choices) => choices.find((item) => item === "下一页 →"),
+    (_title, choices) => choices.find((item) => item === "Следующая страница →"),
+    (_title, choices) => choices.find((item) => item === "Следующая страница →"),
     (_title, choices) => choices.find((item) => item.startsWith("1. ")),
-    (_title, choices) => choices.find((item) => item === "置顶会话"),
+    (_title, choices) => choices.find((item) => item === "Закрепить"),
     (_title, choices) => choices.find((item) => item.startsWith("1. ★")),
-    (_title, choices) => choices.find((item) => item === "取消置顶"),
+    (_title, choices) => choices.find((item) => item === "Открепить"),
     (_title, choices) => choices.find((item) => item.startsWith("1. ")),
-    (_title, choices) => choices.find((item) => item === "切换到此会话"),
+    (_title, choices) => choices.find((item) => item === "Переключиться на сессию"),
   ]);
   try {
     await openSessionManager({
@@ -110,12 +111,32 @@ test("manager can navigate pages, pin and unpin, and switch using the selected s
     assert.deepEqual([...readSessionPins(path)], []);
     assert.match(viewed[2]!.title, /3\/3/);
     assert.match(viewed[4]!.choices[0]!, /★/);
-    assert.match(viewed[4]!.choices[0]!, /次提问/);
+    assert.match(viewed[4]!.choices[0]!, /вопрос/);
     assert.doesNotMatch(viewed[4]!.choices[0]!, /条消息/);
-    assert.deepEqual(notices, ["会话已置顶", "已取消置顶"]);
+    assert.deepEqual(notices, ["Сессия закреплена.", "Закрепление снято."]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("manager collapses children by default, expands groups, and offers child actions", async () => {
+  const parent = session("parent", 10, "Parent");
+  const child = { ...session("child", 20, "general-purpose#child"), parentId: "parent" };
+  const grandchild = { ...session("grandchild", 30, "general-purpose#grandchild"), parentId: "child" };
+  let switched = "";
+  const { ui, viewed } = scriptedUI([
+    (_title, choices) => { assert.ok(!choices.some(value => value.includes("general-purpose#child"))); return choices.find(value => value.includes("Подчинённые сессии")); },
+    (_title, choices) => choices.find(value => value.includes("Подчинённые сессии") && value.includes("general-purpose#child")),
+    (_title, choices) => choices.find(value => value.includes("general-purpose#grandchild")),
+    (_title, choices) => choices.find(value => value === "Переключиться на сессию"),
+  ]);
+  await openSessionManager({
+    ui, loadSessions: async () => [parent, child, grandchild], togglePin: () => false, onPinChanged() {},
+    onSwitch(item) { switched = item.id; }, onRename() {}, onDelete() {},
+  });
+  assert.equal(switched, "grandchild");
+  assert.ok(viewed[1]!.choices.some(value => value.includes("general-purpose#child")));
+  assert.ok(viewed[2]!.choices.some(value => value.includes("general-purpose#grandchild")));
 });
 
 test("manager searches and sorts, then delegates session deletion to the central confirming command", async () => {
@@ -123,9 +144,9 @@ test("manager searches and sorts, then delegates session deletion to the central
   const { ui, viewed } = scriptedUI([
     (_title, choices) => choices.find((item) => item.startsWith("⌕ ")), // Search
     (_title, choices) => choices.find((item) => item.startsWith("↕ ")), // Sort
-    (_title, choices) => choices.find((item) => item.includes("会话标题")),
+    (_title, choices) => choices.find((item) => item.includes("По названию")),
     (_title, choices) => choices.find((value) => value.startsWith("1. ")),
-    (_title, choices) => choices.find((value) => value === "移到回收站"),
+    (_title, choices) => choices.find((value) => value === "Переместить в корзину"),
   ]);
   let redundantConfirmation = false;
   let deleted = "";

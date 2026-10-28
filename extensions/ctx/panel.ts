@@ -16,6 +16,7 @@ export type ContextPanelOptions = {
   readonly getActivity?: () => RunActivitySnapshot | undefined;
   readonly now?: () => number;
   readonly getCacheHitRate?: () => number | undefined;
+  readonly getCacheTokens?: () => number | undefined;
   readonly getUsage: () => ContextUsage | undefined;
   readonly getModel: () => string;
   readonly getThinkingLevel: () => string;
@@ -60,12 +61,13 @@ function activityRows(
     ? formatDuration(activity.durationMs ?? 0)
     : formatDuration(Math.max(0, at - (activity.startedAt ?? at)));
   const status = activity.phase === "idle"
-    ? "Ready"
-    : `${activity.turns.length} turn${activity.turns.length === 1 ? "" : "s"} · ${activity.phase === "running" ? duration : `${activity.aborted ? "aborted" : "done"} ${duration}`}`;
+    ? "Готово"
+    : `${activity.turns.length} ход. · ${activity.phase === "running" ? duration : `${activity.aborted ? "прервано" : "готово"} ${duration}`}`;
   const plain = (value: string): string => value.replace(/\[[^\]]+\]/g, "");
-  const average = `AVG TTFT ${plain(formatTtft(activity.averagePerformance?.ttftMs))} · AVG TPS ${plain(formatTps(activity.averagePerformance?.tokensPerSecond))}`;
-  const compact = `${activity.turns.length}T ${activity.phase === "settled" ? (activity.aborted ? "aborted " : "done ") : ""}${duration}`;
-  const header = [`${status} · ${average}`, status, compact, average]
+  const average = `СРЕДН. TTFT ${plain(formatTtft(activity.averagePerformance?.ttftMs))} · TPS ${plain(formatTps(activity.averagePerformance?.tokensPerSecond))}`;
+  const compact = `${activity.turns.length} ход. ${activity.phase === "settled" ? (activity.aborted ? "прервано " : "готово ") : ""}${duration}`;
+  const narrowCompact = `${activity.turns.length}х ${activity.phase === "settled" ? (activity.aborted ? "прерв. " : "готово ") : ""}${duration}`;
+  const header = [`${status} · ${average}`, status, compact, narrowCompact, average]
     .find((candidate) => visibleWidth(candidate) <= contentWidth) ?? compact;
   const statusColor: PanelColor = activity.phase === "running"
     ? "warning"
@@ -81,7 +83,7 @@ function activityRows(
     panelContent(theme, "─".repeat(contentWidth), "dim", contentWidth),
     panelContent(theme, header, statusColor, contentWidth),
     // Latest observed TTFT, not the run average: AVG TTFT stays in the header.
-    panelContent(theme, `TTFT ${formatTtft(ttft)}${pending ? " · pending" : ""}`, "accent", contentWidth),
+    panelContent(theme, `TTFT ${formatTtft(ttft)}${pending ? " · ожидание" : ""}`, "accent", contentWidth),
   ];
 }
 
@@ -118,13 +120,17 @@ export class ContextPanel implements Component {
     const deltaColor: PanelColor = delta !== undefined && delta < 0 ? "warning" : "accent";
     const summary = `${baseSummary}${deltaSuffix}`;
     const cacheHitRate = this.options.getCacheHitRate?.();
-    const cacheSummary = cacheHitRate === undefined
-      ? "Cache:?"
-      : `Cache:${Math.round(Math.max(0, Math.min(100, cacheHitRate)))}%`;
+    const cacheTokens = this.options.getCacheTokens?.();
+    const cacheRateLabel = cacheHitRate === undefined ? undefined : `${Math.round(Math.max(0, Math.min(100, cacheHitRate)))}%`;
+    const cacheSummary = cacheTokens === undefined
+      ? cacheRateLabel === undefined ? "Кэш:?" : `Кэш:${cacheRateLabel}`
+      : `Кэш: ${formatContextWindow(cacheTokens)} ток. · ${cacheRateLabel ?? "?%"}`;
     const summaryText = `${this.theme.fg(color, baseSummary)}${deltaSuffix ? this.theme.fg(deltaColor, deltaSuffix) : ""}`;
-    const summaryRow = visibleWidth(summary) + visibleWidth(cacheSummary) + 1 <= contentWidth
+    const cacheFitsBesideSummary = visibleWidth(summary) + visibleWidth(cacheSummary) + 1 <= contentWidth;
+    const summaryRow = cacheFitsBesideSummary
       ? `${summaryText}${" ".repeat(contentWidth - visibleWidth(summary) - visibleWidth(cacheSummary))}${this.theme.fg(color, cacheSummary)}`
       : summaryText;
+    const cacheRow = cacheFitsBesideSummary ? undefined : panelContent(this.theme, cacheSummary, color, contentWidth);
     const deltaWidth = delta === undefined || delta <= 0 || filledWidth === 0 ||
       typeof windowTokens !== "number" || !Number.isFinite(windowTokens) || windowTokens <= 0
       ? 0
@@ -137,7 +143,7 @@ export class ContextPanel implements Component {
     const row = (text: string): void => { rows.push(panelContent(this.theme, text, "dim", contentWidth)); };
     const estimate = this.options.getEstimate?.();
     const amount = (tokens: number | undefined, percent: number | undefined): string =>
-      tokens === undefined ? "unknown" : `~${tokens === 0 ? "0" : formatContextWindow(tokens)} ${percent === undefined ? "?" : percent.toFixed(1)}%`;
+      tokens === undefined ? "нет данных" : `~${tokens === 0 ? "0" : formatContextWindow(tokens)} ${percent === undefined ? "?" : percent.toFixed(1)}%`;
     const alignedRow = (label: string, value: string, labelColor: PanelColor = "dim", valueColor: PanelColor = "dim"): void => {
       const gap = contentWidth - visibleWidth(label) - visibleWidth(value) - 1;
       if (gap >= 1) {
@@ -151,18 +157,25 @@ export class ContextPanel implements Component {
       alignedRow(`${label}:`, amount(tokens, percent));
     };
     const imagesWire = estimate?.imagesWire ?? { images: 0, source: "unavailable" as const };
-    const imageLabel = imagesWire.source === "unavailable" ? "⚠ Images" : "Images";
+    const imageLabel = imagesWire.source === "unavailable" ? "⚠ Изображения" : "Изображения";
     const imageValue = imagesWire.source === "unavailable"
-      ? "not observed"
-      : `${imagesWire.images} ${imagesWire.images === 1 ? "image" : "images"}`;
+      ? "нет данных"
+      : `${imagesWire.images} шт.`;
     row("─".repeat(contentWidth));
-    for (const category of estimate?.categories ?? []) estimateRow(category.name, category.tokens, category.percent);
-    if (!estimate) row("No snapshot available");
+    for (const category of estimate?.categories ?? []) {
+      const labels: Record<string, string> = {
+        System: "Система", Tools: "Инструм.", Messages: "Сообщения",
+        "Tool Results": "Результаты", Summary: "Сводка", Other: "Другое",
+      };
+      estimateRow(labels[category.name] ?? category.name, category.tokens, category.percent);
+    }
+    if (!estimate) row("Нет данных для отображения");
     alignedRow(imageLabel, imageValue, imagesWire.source === "unavailable" ? "warning" : "dim", "dim");
     return [
-      panelTop(this.theme, "CTX", renderWidth),
+      panelTop(this.theme, "КОНТЕКСТ", renderWidth),
       panelContent(this.theme, modelLabel, "accent", contentWidth),
       panelContent(this.theme, summaryRow, color, contentWidth),
+      ...(cacheRow ? [cacheRow] : []),
       panelContent(
         this.theme,
         `${this.theme.fg(color, "█".repeat(filledWidth - deltaWidth))}${deltaWidth > 0 ? this.theme.fg("accent", "█".repeat(deltaWidth)) : ""}${this.theme.fg(color, "░".repeat(contentWidth - filledWidth))}`,

@@ -10,7 +10,7 @@ export type SidebarPanelLayout = {
   readonly basis?: number | "auto";
   readonly grow?: number;
   readonly shrink?: number;
-  readonly minSize?: number;
+  readonly minSize?: number | ((context: SidebarPanelLayoutContext) => number);
   readonly maxSize?: number | ((context: SidebarPanelLayoutContext) => number);
 };
 

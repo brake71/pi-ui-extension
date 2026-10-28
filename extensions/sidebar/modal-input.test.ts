@@ -25,7 +25,22 @@ test("capturing overlays block sidebar clicks and drags and cancel pending gestu
   try {
     await new Promise(resolve => setImmediate(resolve));
     tui.currentLayout = renderLayoutFrame(tui.layoutRoot, 200, 50, () => {});
-    const find = (box: any, name: string): any => box.component.constructor.name === name ? box : box.children.map((child: any) => find(child, name)).find(Boolean);
+    const find = (box: any, name: string): any => box.component?.constructor.name === name ? box : box.children?.map((child: any) => find(child, name)).find(Boolean);
+    const wrappers = (box: any): any[] => [
+      ...(box.component?.constructor.name === "CollapsiblePanel" ? [box] : []),
+      ...(box.children ?? []).flatMap(wrappers),
+    ];
+    const collapsedPanels = wrappers(tui.currentLayout.root);
+    assert.equal(collapsedPanels.length, 3);
+    const sessionHeader = collapsedPanels[0]!.component.render(collapsedPanels[0]!.rect.width)[0]!.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+    const sessionTitleX = collapsedPanels[0]!.rect.x + sessionHeader.indexOf("СЕССИИ");
+    mouse(sessionTitleX, collapsedPanels[0]!.rect.y);
+    mouse(sessionTitleX, collapsedPanels[0]!.rect.y, "m");
+    tui.currentLayout = renderLayoutFrame(tui.layoutRoot, 200, 50, () => {});
+    const updatedPanels = wrappers(tui.currentLayout.root);
+    mouse(updatedPanels[2]!.rect.x + 4, updatedPanels[2]!.rect.y);
+    mouse(updatedPanels[2]!.rect.x + 4, updatedPanels[2]!.rect.y, "m");
+    tui.currentLayout = renderLayoutFrame(tui.layoutRoot, 200, 50, () => {});
     const sessions = find(tui.currentLayout.root, "SessionPanel").rect;
     const view = find(tui.currentLayout.root, "ToolViewPanel").rect;
     // A press begun before the modal must not fire after it closes.

@@ -40,7 +40,15 @@ test("bulk cleanup rechecks active leases and files changed during confirmation"
     on(name: string, callback: (event: any, ctx: any) => unknown) {
       events.set(name, [...(events.get(name) ?? []), callback]);
     },
-    async exec(_command: string, args: string[]) { moves.push(args[0]!); return { code: 0, stderr: "" }; },
+    async exec(command: string, args: string[]) {
+      if (command === "powershell.exe") {
+        const script = Buffer.from(args[4]!, "base64").toString("utf16le");
+        const encodedPath = script.match(/DeleteFile\('((?:''|[^'])*)'/)?.[1];
+        assert.ok(encodedPath, "PowerShell recycle command includes the target path");
+        moves.push(encodedPath.replace(/''/g, "'"));
+      } else moves.push(args[0]!);
+      return { code: 0, stderr: "" };
+    },
   };
   const ctx: any = {
     mode: "rpc", cwd: root, isIdle: () => true, isProjectTrusted: () => true,
@@ -66,7 +74,7 @@ test("bulk cleanup rechecks active leases and files changed during confirmation"
     await emit("session_start");
     await commands.get("sidebar-session-clear-others")!.handler("", ctx);
     assert.deepEqual(new Set(moves), new Set([unchanged.getSessionFile(), recentlyModified.getSessionFile()]));
-    assert.match(notices.join("\n"), /2 protected\/changed/);
+    assert.match(notices.join("\n"), /защищены\/изменены\): 2/);
     assert.ok(!moves.includes(active.getSessionFile()!));
     assert.ok(moves.includes(recentlyModified.getSessionFile()!), "recent historical sessions are now eligible");
   } finally {

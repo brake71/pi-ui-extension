@@ -21,7 +21,7 @@ test("discovers global and trusted project MCP configs without exposing secrets"
     assert.deepEqual(trusted.map(x => x.name), ["context7", "chrome-devtools"]);
     assert.doesNotMatch(JSON.stringify(trusted), /secret/);
     assert.deepEqual(mergeMcpResourceEntries(trusted, mcpResourceEntriesFromStatus({ version: 1, servers: [{ name: "context7" }] }))
-      .map(x => x.description), ["MCP server loaded in the current Pi session", "Configured MCP server (connection not verified)"]);
+      .map(x => x.description), ["Сервер MCP загружен в текущем сеансе Pi", "Сервер MCP настроен, соединение не проверено"]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -37,8 +37,8 @@ test("builds MCP resource rows from the adapter status snapshot", () => {
       ],
     }),
     [
-      { name: "context7", description: "MCP server loaded in the current Pi session" },
-      { name: "chrome-devtools", description: "MCP server loaded in the current Pi session" },
+      { name: "context7", description: "Сервер MCP загружен в текущем сеансе Pi" },
+      { name: "chrome-devtools", description: "Сервер MCP загружен в текущем сеансе Pi" }
     ],
   );
 });

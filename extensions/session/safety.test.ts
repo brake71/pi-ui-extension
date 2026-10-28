@@ -25,7 +25,7 @@ test("separate Pi instances protect their active session paths until shutdown", 
     second.dispose();
     assert.equal(readActiveSessionPaths(directory).size, 0);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 

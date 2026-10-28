@@ -51,7 +51,7 @@ export function createDialogUI(ui: ExtensionUIContext): DialogUI {
           const lines = message ? wrapTextWithAnsi(clean(message), inner).slice(0, 4) : [];
           bodyStart = 3 + lines.length + (lines.length ? 1 : 0);
           const rows = [...lines.map(line => theme.fg("muted", line)), ...(lines.length ? [""] : []), ...list.render(inner)];
-          return modalFrame(theme, width, title, rows, danger ? "↑↓ choose · Enter select · Esc cancel" : "↑↓ navigate · Enter select · Esc close", danger);
+          return modalFrame(theme, width, title, rows, danger ? "↑↓ выбор · Enter подтвердить · Esc отмена" : "↑↓ навигация · Enter выбрать · Esc закрыть", danger);
         },
         invalidate() { list.invalidate(); },
         handleInput(data) { list.handleInput(data); tui.requestRender(); },
@@ -68,14 +68,14 @@ export function createDialogUI(ui: ExtensionUIContext): DialogUI {
   return {
     notify: (message, level) => ui.notify(message, level),
     select: (title, options) => choose(title, options),
-    confirm: async (title, message) => (await choose(title, ["Cancel", "Move to Trash"], message, true)) === "Move to Trash",
+    confirm: async (title, message) => (await choose(title, ["Отмена", "В корзину"], message, true)) === "В корзину",
     input: (title, placeholder) => ui.custom<string | undefined>((tui, theme, _keys, done) => {
       const field = new Input({ prompt: "  › ", placeholder: placeholder ?? "", placeholderStyle: s => theme.fg("dim", s) });
       field.focused = true;
       field.onSubmit = value => done(value);
       field.onEscape = () => done(undefined);
       const modal: Component = {
-        render(width) { return modalFrame(theme, width, title, [field.render(Math.max(1, width - 4))[0] ?? ""], "Enter save · Esc cancel"); },
+        render(width) { return modalFrame(theme, width, title, [field.render(Math.max(1, width - 4))[0] ?? ""], "Enter сохранить · Esc отмена"); },
         invalidate() { field.invalidate(); },
         handleInput(data) { field.handleInput(data); tui.requestRender(); },
       };
@@ -97,7 +97,7 @@ export function createDialogUI(ui: ExtensionUIContext): DialogUI {
           page = Math.max(1, Math.min(22, Math.floor(tui.terminal.rows * 0.7) - 6));
           position = Math.max(0, Math.min(position, Math.max(0, rendered.length - page)));
           const lines = rendered.slice(position, position + page);
-          const footer = `Read only · ${position + 1}-${Math.min(position + page, rendered.length)}/${rendered.length} · ↑↓ PgUp/PgDn scroll · Esc close`;
+          const footer = `Только чтение · ${position + 1}-${Math.min(position + page, rendered.length)}/${rendered.length} · ↑↓ PgUp/PgDn прокрутка · Esc закрыть`;
           return modalFrame(theme, width, title, lines.map(s => theme.fg("text", s)), footer);
         },
         invalidate() {},

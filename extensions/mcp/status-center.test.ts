@@ -43,7 +43,7 @@ test("native Pi enabled:false and trusted project overrides win without leaking 
       ["local", "project", true],
     ]);
     assert.doesNotMatch(JSON.stringify(snapshot), /token-123|secret|private-key-path/);
-    assert.match(describeMcpStatus(snapshot.servers[0]!), /Disabled/);
+    assert.match(describeMcpStatus(snapshot.servers[0]!), /Отключено/);
   });
 });
 
@@ -60,7 +60,7 @@ test("extension registrations are not mistaken for confirmed connections", () =>
       ["extension_mcp", "extension", "unknown"],
       ["disabled_ext", "extension", "unknown"],
     ]);
-    assert.match(describeMcpStatus(snapshot.servers[0]!), /Registered.*unverified/);
+    assert.match(describeMcpStatus(snapshot.servers[0]!), /Зарегистрировано.*соединение не проверено/);
     assert.doesNotMatch(JSON.stringify(snapshot), /sensitive|secret|unsafe/);
   });
 });
@@ -89,8 +89,8 @@ test("adapter v1 reports loading separately from explicit health and ignores dis
       ["auth", true, true, "needs-auth"],
       ["not_running", false, false, "unknown"],
     ]);
-    assert.match(describeMcpStatus(snapshot.servers[0]!), /Loaded.*unverified/);
-    assert.match(describeMcpStatus(snapshot.servers[2]!), /Connected.*adapter reported/);
+    assert.match(describeMcpStatus(snapshot.servers[0]!), /Загружено.*соединение не проверено/);
+    assert.match(describeMcpStatus(snapshot.servers[2]!), /Подключено.*статус адаптера/);
     assert.doesNotMatch(JSON.stringify(snapshot), /secret|untrusted/);
     assert.deepEqual(
       buildMcpStatusSnapshot(agent, project, true, [], []).servers.map((s) => s.name),
@@ -161,9 +161,9 @@ test("MCP status center opens a safe read-only detail without leaking secrets", 
     notify() {},
   } }, snapshot);
   await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.match(selected.join("\n"), /MCP Status.*1 enabled \/ 2 total/);
-  assert.match(selected.join("\n"), /docs.*Connected/);
-  assert.match(selected.join("\n"), /blocked.*Disabled/);
-  assert.match(details.join("\n"), /Use Pi's built-in \/mcp/);
+  assert.match(selected.join("\n"), /Состояние MCP.*включено: 1 \/ всего: 2/);
+  assert.match(selected.join("\n"), /docs.*Подключено/);
+  assert.match(selected.join("\n"), /blocked.*Отключено/);
+  assert.match(details.join("\n"), /используйте встроенную команду \/mcp/);
   assert.doesNotMatch(JSON.stringify({ selected, details }), /token-very-secret|private.invalid/);
 });

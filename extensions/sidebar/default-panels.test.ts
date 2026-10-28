@@ -28,8 +28,12 @@ test("registers sessions without removed standalone panels", () => {
   assert.ok(ids.includes("context"));
   const context = createDefaultSidebarPanels(options()).find(panel => panel.id === "context")!;
   const sessions = createDefaultSidebarPanels(options()).find(panel => panel.id === SESSION_PANEL_ID)!;
-  assert.equal(sessions.layout?.maxSize, 9);
-  assert.equal(context.layout?.minSize, 10);
+  assert.equal(sessions.layout?.minSize instanceof Function ? sessions.layout.minSize({ terminalRows: 40, terminalColumns: 100 }) : sessions.layout?.minSize, 2);
+  assert.equal(sessions.layout?.maxSize instanceof Function ? sessions.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : sessions.layout?.maxSize, 2);
+  assert.equal(context.layout?.minSize instanceof Function ? context.layout.minSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.minSize, 10);
+  assert.equal(context.layout?.maxSize instanceof Function ? context.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.maxSize, 34);
+  const toolView = createDefaultSidebarPanels(options()).find(panel => panel.id === TOOL_VIEW_PANEL_ID)!;
+  assert.equal(toolView.layout?.maxSize instanceof Function ? toolView.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : toolView.layout?.maxSize, 2);
   assert.ok(!ids.includes("resources"));
   assert.ok(!ids.includes("mcp"));
 });
