@@ -51,9 +51,9 @@ interface CompactToolSpec {
 
 function modeLabel(mode: ToolViewMode): string {
   switch (mode) {
-    case "normal": return "Полный";
-    case "compact": return "Краткий";
-    case "hidden": return "Скрытый";
+    case "normal": return "Normal";
+    case "compact": return "Compact";
+    case "hidden": return "Hidden";
   }
 }
 

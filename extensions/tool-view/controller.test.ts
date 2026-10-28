@@ -58,8 +58,8 @@ test("applies a mode change from another context wrapper in the active session",
 
     assert.equal(controller.getMode(), "normal");
     assert.deepEqual(JSON.parse(await readFile(modeFile, "utf8")), { mode: "normal" });
-    assert.equal(statuses.at(-1), "Отображение инструментов: Полный");
-    assert.equal(notices.at(-1), "Отображение инструментов: Полный");
+    assert.equal(statuses.at(-1), "Отображение инструментов: Normal");
+    assert.equal(notices.at(-1), "Отображение инструментов: Normal");
     assert.deepEqual(expandedValues.slice(-2), [true, false]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -128,7 +128,7 @@ test("the single Tool View mode controls Thinking, persists once, and refreshes 
     assert.deepEqual(expanded, [true, false, true, false], "tool transcript refresh still occurs");
     assert.equal(commands.has("thinking-view"), false, "no separate Thinking command");
     assert.equal(registeredToolDefinitions, 0);
-    assert.match(notices.join("\n"), /Отображение инструментов: Скрытый/);
+    assert.match(notices.join("\n"), /Отображение инструментов: Hidden/);
 
     const restarted = await installToolViewController(pi, { modeFile });
     assert.equal(restarted.getMode(), "hidden", "existing mode file persists Thinking and Tools together");

@@ -23,9 +23,9 @@ The right sidebar appears automatically. It is not available in regular TUI mode
 
 | Panel | Purpose |
 | --- | --- |
-| **SESSIONS** | Recent sessions, pinning, management, and resource shortcuts |
-| **CTX** | Context composition, model information, and run performance |
-| **VIEW** | Normal / Compact / Hidden display modes and Tool/MCP statistics |
+| **SESSIONS** | Recent sessions, pinning, and management |
+| **CTX** | Model, context usage, input/output/cache tokens, and expandable composition |
+| **VIEW** | Display modes, Tool/MCP statistics, and resource shortcuts |
 
 Panels support mouse interaction, scrolling, and terminal resizing. Session management, resource browsing, and mode selection use centered dialogs: navigate with ↑/↓ and Enter, or close with Esc. While a dialog is open, background sidebar actions are paused. Resource details are read-only and scrollable.
 
@@ -55,7 +55,7 @@ Click `⊗` in the SESSIONS title bar to preview bulk cleanup. The preview shows
 
 ### Resource shortcuts and MCP
 
-The bottom of SESSIONS provides four resource shortcuts:
+Expand VIEW to find four vertically stacked resource shortcuts below the usage statistics:
 
 - **AGENTS.md** — browse instruction resources and read the full selected file.
 - **Skills** — browse available skills and their descriptions.
@@ -64,19 +64,15 @@ The bottom of SESSIONS provides four resource shortcuts:
 
 The **MCP Status Center** is read-only. **Configured, registered, or loaded does not mean connected**; some servers have no confirmed connection status available. Sensitive credentials are not displayed. Use Pi's `/mcp` manager for connection diagnostics, sign-in, and configuration changes.
 
-### CTX: context and performance
+### CTX: compact context summary
 
-The **CTX** panel shows:
+At startup CTX is open, while SESSIONS and VIEW are collapsed. It shows the model, Thinking level, context usage percentage and bar, and `in / out / cache` provider-reported token totals for the active branch. The context-window percentage is not the same as input/output totals accumulated across model requests. Click **Composition** for English-language estimates of `System`, `Tools`, `Messages`, `Tool Results`, `Summary`, `Other`, and `Images`.
 
-- Current model, Thinking level, context window/usage, current-run context change, and image count.
-- Context composition: `System`, `Tools`, `Messages`, `Tool Results`, `Summary`, and `Other`.
-- Run turns and elapsed time, average time to first output (**TTFT**), average output speed (**TPS**), the latest TTFT, and available cache metrics.
-
-**Token composition is an estimate**, intended to help understand context usage. It is not exact provider usage or billing data.
+**Token composition is a local estimate**, intended to help understand context usage. It is not exact provider usage or billing data.
 
 ### VIEW: tool output and Thinking
 
-One selector controls tool output and Thinking. The default is **Compact**.
+Three full-width rows (Normal, Compact, Hidden) control both tool output and Thinking. The default is **Compact**.
 
 | Mode | Tools | Thinking |
 | --- | --- | --- |

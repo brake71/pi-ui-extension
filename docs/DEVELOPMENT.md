@@ -47,7 +47,7 @@ pi --no-extensions -e builtin:mcp -e ./extensions/index.ts --tui-mode fullscreen
 ```text
 pi-ui-extension/
 ├── extensions/
-│   ├── ctx/                 # Context composition, deltas, runtime metrics
+│   ├── ctx/                 # Compact context summary, token totals, composition
 │   ├── dialogs/             # Centered TUI overlay dialogs and keyboard handling
 │   ├── footer/              # Compact footer
 │   ├── mcp/                 # MCP resources, runtime state and attribution
@@ -57,7 +57,8 @@ pi-ui-extension/
 │   └── index.ts             # Pi extension entry point
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   └── DEVELOPMENT.md
+│   ├── DEVELOPMENT.md
+│   └── FORK-CHANGES.md      # Changes specific to this fork
 ├── .github/workflows/
 │   ├── ci.yml
 │   └── release.yml

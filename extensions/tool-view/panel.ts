@@ -17,8 +17,18 @@ export type ToolViewPanelOptions = {
   readonly getMode: () => ToolViewMode | undefined;
   readonly getUsage: () => ToolUsageSnapshot | undefined;
   readonly onSelect: (mode: ToolViewMode) => void;
+  readonly onOpenResources?: (button: ResourceButtonId) => void;
   readonly showBottomBorder?: boolean;
 };
+
+export type ResourceButtonId = "agents" | "skills" | "extensions" | "mcp";
+
+const RESOURCE_BUTTONS: ReadonlyArray<{ id: ResourceButtonId; label: string }> = [
+  { id: "agents", label: "Правила" },
+  { id: "skills", label: "Навыки" },
+  { id: "extensions", label: "Плагины" },
+  { id: "mcp", label: "MCP" },
+];
 
 type LayoutRect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type LayoutBox = {
@@ -44,17 +54,10 @@ function findLayoutBox(box: LayoutBox, component: Component): LayoutBox | undefi
 
 function modeLabel(mode: ToolViewMode): string {
   switch (mode) {
-    case "normal": return "Полный";
-    case "compact": return "Краткий";
-    case "hidden": return "Скрытый";
+    case "normal": return "Normal";
+    case "compact": return "Compact";
+    case "hidden": return "Hidden";
   }
-}
-
-function centerText(text: string, width: number): string {
-  const clipped = truncateToWidth(text, Math.max(0, width), "");
-  const padding = Math.max(0, width - visibleWidth(clipped));
-  const left = Math.floor(padding / 2);
-  return `${" ".repeat(left)}${clipped}${" ".repeat(padding - left)}`;
 }
 
 type UsageColor = "dim" | "muted" | "text" | "accent" | "success";
@@ -110,9 +113,10 @@ export function groupUsageCounts(counts: readonly ToolUsageCount[]): Readonly<Re
   });
 }
 
-/** Clickable single-row selector for tool transcript rendering mode. */
+/** Three full-width mode rows above tool usage and resource shortcuts. */
 export class ToolViewPanel implements Component {
   private pressedMode: ToolViewMode | undefined;
+  private pressedResource: ResourceButtonId | undefined;
   private disposed = false;
   private readonly uninstallInput: () => void;
 
@@ -132,17 +136,23 @@ export class ToolViewPanel implements Component {
   private modeAt(x: number, y: number): ToolViewMode | undefined {
     const box = this.getLayoutBox();
     if (!box || !contains(box.clip, x, y) || !contains(box.rect, x, y)) return undefined;
-    if (y - box.rect.y !== 1) return undefined;
-
     const contentWidth = Math.max(1, Math.min(box.rect.width, this.options.getDesiredWidth()) - 4);
     const contentColumn = x - box.rect.x - 2;
     if (contentColumn < 0 || contentColumn >= contentWidth) return undefined;
 
-    const index = Math.min(
-      TOOL_VIEW_MODES.length - 1,
-      Math.floor(contentColumn * TOOL_VIEW_MODES.length / contentWidth),
-    );
-    return TOOL_VIEW_MODES[index];
+    return TOOL_VIEW_MODES[y - box.rect.y - 1];
+  }
+
+  private resourceAt(x: number, y: number): ResourceButtonId | undefined {
+    if (!this.options.onOpenResources) return undefined;
+    const box = this.getLayoutBox();
+    if (!box || !contains(box.clip, x, y) || !contains(box.rect, x, y)) return undefined;
+    const renderWidth = Math.max(1, Math.min(box.rect.width, this.options.getDesiredWidth()));
+    const contentWidth = Math.max(1, renderWidth - 4);
+    const contentColumn = x - box.rect.x - 2;
+    if (contentColumn < 0 || contentColumn >= contentWidth) return undefined;
+    const firstRow = this.render(renderWidth).length - (this.options.showBottomBorder === false ? 0 : 1) - RESOURCE_BUTTONS.length;
+    return RESOURCE_BUTTONS[y - box.rect.y - firstRow]?.id;
   }
 
   private isInsidePanel(x: number, y: number): boolean {
@@ -153,6 +163,7 @@ export class ToolViewPanel implements Component {
   private handleMouseInput(data: string): { consume: true } | undefined {
     if (isSidebarInputBlocked(this.options.tui)) {
       this.pressedMode = undefined;
+      this.pressedResource = undefined;
       return undefined;
     }
     const mouse = parseSgrMouseEvent(data);
@@ -165,6 +176,17 @@ export class ToolViewPanel implements Component {
     const isLeft = (mouse.button & 3) === 0;
 
     if (mouse.release) {
+      if (this.pressedResource) {
+        const pressed = this.pressedResource;
+        this.pressedResource = undefined;
+        if (this.resourceAt(x, y) === pressed) {
+          queueMicrotask(() => {
+            if (!this.disposed && !isSidebarInputBlocked(this.options.tui)) this.options.onOpenResources?.(pressed);
+          });
+        }
+        this.options.tui.requestRender();
+        return { consume: true };
+      }
       const pressed = this.pressedMode;
       if (!pressed) return undefined;
       this.pressedMode = undefined;
@@ -182,6 +204,13 @@ export class ToolViewPanel implements Component {
     }
 
     if (mouse.motion) {
+      if (this.pressedResource) {
+        if (this.resourceAt(x, y) !== this.pressedResource) {
+          this.pressedResource = undefined;
+          this.options.tui.requestRender();
+        }
+        return { consume: true };
+      }
       if (!this.pressedMode) return undefined;
       if (this.modeAt(x, y) !== this.pressedMode) {
         this.pressedMode = undefined;
@@ -193,6 +222,11 @@ export class ToolViewPanel implements Component {
     if (!inside) return undefined;
     if (!isLeft) return undefined;
 
+    this.pressedResource = this.resourceAt(x, y);
+    if (this.pressedResource) {
+      this.options.tui.requestRender();
+      return { consume: true };
+    }
     if (this.options.getMode() === undefined) return { consume: true };
     this.pressedMode = this.modeAt(x, y);
     if (this.pressedMode) this.options.tui.requestRender();
@@ -204,20 +238,12 @@ export class ToolViewPanel implements Component {
     const contentWidth = Math.max(1, renderWidth - 4);
     const currentMode = this.options.getMode();
     const connected = currentMode !== undefined;
-    const baseWidth = Math.floor(contentWidth / TOOL_VIEW_MODES.length);
-    const remainder = contentWidth % TOOL_VIEW_MODES.length;
-    const body = TOOL_VIEW_MODES.map((mode, index) => {
+    const modeRows = TOOL_VIEW_MODES.map((mode) => {
       const selected = mode === currentMode;
-      const pressed = mode === this.pressedMode;
       const marker = !connected ? "·" : selected ? "●" : "○";
-      const segmentWidth = baseWidth + (index < remainder ? 1 : 0);
-      const text = centerText(`${marker} ${modeLabel(mode)}`, segmentWidth);
-      return pressed
-        ? this.theme.fg("warning", text)
-        : selected
-          ? this.theme.fg("success", text)
-          : this.theme.fg("dim", text);
-    }).join("");
+      const color = mode === this.pressedMode ? "warning" : selected ? "success" : "dim";
+      return panelContent(this.theme, `${marker} ${modeLabel(mode)}`, color, contentWidth);
+    });
     const usage = this.options.getUsage();
     const grouped = groupUsageCounts(usage?.counts ?? []);
     const direct = grouped.tool.filter((count) => count.scope !== "nested");
@@ -259,9 +285,15 @@ export class ToolViewPanel implements Component {
 
     const lines = [
       panelTop(this.theme, "ОТОБРАЖЕНИЕ", renderWidth),
-      panelContent(this.theme, body, "dim", contentWidth),
+      ...modeRows,
       flushSeparator(this.theme, renderWidth),
       ...usageRows,
+      ...(this.options.onOpenResources ? [
+        flushSeparator(this.theme, renderWidth),
+        ...RESOURCE_BUTTONS.map(({ id, label }) => panelContent(
+          this.theme, this.theme.fg(this.pressedResource === id ? "warning" : "accent", label), "accent", contentWidth,
+        )),
+      ] : []),
     ];
     if (this.options.showBottomBorder !== false) lines.push(panelBottom(this.theme, renderWidth));
     return lines.map((line) => truncateToWidth(line, renderWidth, ""));
@@ -273,6 +305,7 @@ export class ToolViewPanel implements Component {
     if (this.disposed) return;
     this.disposed = true;
     this.pressedMode = undefined;
+    this.pressedResource = undefined;
     this.uninstallInput();
   }
 }

@@ -5,7 +5,6 @@ import { previewSessionCleanup } from "./session/cleanup-preview.ts";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   DefaultPackageManager,
-  estimateTokens,
   getAgentDir,
   loadProjectContextFiles,
   SettingsManager,
@@ -14,14 +13,14 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { installContextEstimates } from "./ctx/data.ts";
-import { createActivityTracker, createStreamingTokenSampler, type ActivityTracker } from "./ctx/activity.ts";
+import { createTokenUsageTracker } from "./ctx/tokens.ts";
 import { installFooter, type FooterController } from "./footer/index.ts";
 import { adapterMcpServers, buildMcpStatusSnapshot, describeMcpStatus, type McpStatusSnapshot } from "./mcp/status-center.ts";
 import {
   createDefaultSidebarPanels,
   SESSION_PANEL_ID,
 } from "./sidebar/default-panels.ts";
-import type { ResourceButtonId } from "./session/panel.ts";
+import type { ResourceButtonId } from "./tool-view/panel.ts";
 import { installSidebar, type SidebarController } from "./sidebar/index.ts";
 import { deleteSessionFile } from "./session/mutations.ts";
 import {
@@ -264,34 +263,9 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   let toolViewMode: ToolViewMode | undefined;
   let footer: FooterController | undefined;
   let sidebar: SidebarController | undefined;
-  let activity: ActivityTracker | undefined;
   let toolUsage: ToolUsageTracker | undefined;
   let getCurrentBranch: (() => readonly unknown[]) | undefined;
-  let cacheInputTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheWriteTokens = 0;
-  const cacheHitRate = (): number => {
-    const promptTokens = cacheInputTokens + cacheReadTokens + cacheWriteTokens;
-    return promptTokens === 0 ? 0 : cacheReadTokens / promptTokens * 100;
-  };
-  const addCacheUsage = (usage: unknown): void => {
-    if (!usage || typeof usage !== "object") return;
-    const values = usage as { input?: unknown; cacheRead?: unknown; cacheWrite?: unknown };
-    const number = (value: unknown): number => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
-    cacheInputTokens += number(values.input);
-    cacheReadTokens += number(values.cacheRead);
-    cacheWriteTokens += number(values.cacheWrite);
-  };
-  const resetCacheUsage = (branch: readonly unknown[]): void => {
-    cacheInputTokens = 0;
-    cacheReadTokens = 0;
-    cacheWriteTokens = 0;
-    for (const entry of branch) {
-      if (!entry || typeof entry !== "object") continue;
-      const typed = entry as { type?: unknown; message?: { usage?: unknown } };
-      if (typed.type === "message") addCacheUsage(typed.message?.usage);
-    }
-  };
+  const tokenUsage = createTokenUsageTracker();
   let switchRequested = false;
   let sessionManagerOpen = false;
   const safeReadPins = (): ReadonlySet<string> => {
@@ -563,13 +537,8 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
 
   const refreshContextUi = () => {
     footer?.refresh();
-    // CTX reads the activity snapshot during render, so refresh rather than
-    // updatePanel — the snapshot is not a panel state payload anymore.
     sidebar?.refresh();
   };
-  const streamingTokens = createStreamingTokenSampler(estimateTokens, (tokens, observedAt) => {
-    activity?.updateResponseEstimate(tokens, observedAt);
-  });
   const contextEstimates = installContextEstimates(pi, refreshContextUi);
   const refreshSessions = () => {
     sidebar?.updatePanel(SESSION_PANEL_ID, undefined);
@@ -584,49 +553,25 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   pi.on("agent_start", (_event, ctx) => {
     // A fresh Pi session creates its JSONL file only after its first user message.
     updateActiveLease(ctx);
-    activity?.startRun();
     refreshContextUi();
-  });
-  pi.on("turn_start", (event) => {
-    activity?.startTurn(event.turnIndex);
-    sidebar?.refresh();
-  });
-  pi.on("before_provider_request", () => {
-    streamingTokens.reset();
-    activity?.startResponse();
-  });
-  pi.on("message_update", (event) => {
-    if (activity) streamingTokens.observe(event.message);
   });
   pi.on("message_end", (event) => {
     if (event.message.role === "assistant") {
-      addCacheUsage(event.message.usage);
-      activity?.finishResponse(event.message.usage.output);
+      tokenUsage.add(event.message.usage);
     }
     refreshContextUi();
   });
-  pi.on("tool_execution_start", (event) => {
-    activity?.startTool(event);
-    sidebar?.refresh();
-  });
   pi.on("tool_execution_end", (event) => {
-    activity?.finishTool(event);
     toolUsage?.record(event);
     sidebar?.refresh();
   });
-  pi.on("agent_settled", (event) => {
-    activity?.settle(undefined, event.aborted === true);
-    refreshSessions();
-  });
+  pi.on("agent_settled", refreshSessions);
   pi.on("agent_end", refreshContextUi);
-  pi.on("turn_end", (event) => {
-    activity?.finishTurn(event.turnIndex);
-    refreshContextUi();
-  });
+  pi.on("turn_end", refreshContextUi);
   pi.on("session_tree", () => {
     const branch = getCurrentBranch?.();
     if (branch) {
-      resetCacheUsage(branch);
+      tokenUsage.reset(branch);
       toolUsage?.resetSession(branch);
     }
     refreshContextUi();
@@ -639,7 +584,6 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   const clearControllers = (): void => {
     sidebar = undefined;
     footer = undefined;
-    activity = undefined;
     toolUsage = undefined;
     getCurrentBranch = undefined;
   };
@@ -651,7 +595,6 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
     // A reload may start without session_shutdown. Release the old layout and
     // mouse listeners while their original context is still valid; otherwise
     // a second sidebar can wrap the first and leave priority listeners behind.
-    activity?.reset();
     sidebar?.dispose();
     footer?.dispose();
     clearControllers();
@@ -667,22 +610,18 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
     toolViewMode = toolView.getMode();
     getCurrentBranch = () => ctx.sessionManager.getBranch();
     const branch = ctx.sessionManager.getBranch();
-    resetCacheUsage(branch);
+    tokenUsage.reset(branch);
     toolUsage = createToolUsageTracker([], getMcpServerNames);
     toolUsage.resetSession(branch);
     if (ctx.mode !== "tui") return;
 
-    activity = createActivityTracker(ctx.cwd, refreshContextUi);
     footer = installFooter(
       ctx,
       (tui, theme) => {
         const panels = createDefaultSidebarPanels({
           getContextUsage: () => ctx.getContextUsage(),
           getContextEstimate: () => contextEstimates.getSnapshot(),
-          getContextDelta: () => contextEstimates.getDelta(),
-          getActivity: () => activity?.getSnapshot(),
-          getCacheHitRate: cacheHitRate,
-          getCacheTokens: () => cacheReadTokens + cacheWriteTokens,
+          getTokenTotals: tokenUsage.getTotals,
           getModel: () => ctx.model?.id ?? "no-model",
           getThinkingLevel: () => pi.getThinkingLevel(),
           getToolViewMode: () => toolViewMode,
@@ -760,7 +699,6 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
     // cannot tear it down on our behalf during session replacement. Dispose
     // both controllers while this session context is still active; otherwise
     // the old sidebar may render once more and access a stale ctx.
-    activity?.reset();
     sidebar?.dispose();
     footer?.dispose();
     clearControllers();

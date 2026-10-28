@@ -1,11 +1,9 @@
 import type { ContextUsage, Theme } from "@earendil-works/pi-coding-agent";
 import { ScrollView, VStack, type Component, type TUI } from "@earendil-works/pi-tui";
-import type { RunActivitySnapshot } from "../ctx/activity.ts";
 import type { ContextEstimate } from "../ctx/data.ts";
-import { ContextPanel } from "../ctx/panel.ts";
-import type { ResourceButtonId } from "../session/panel.ts";
+import { ContextPanel, type TokenTotals } from "../ctx/panel.ts";
 import { SessionPanel, type SessionListItem } from "../session/panel.ts";
-import { ToolViewPanel } from "../tool-view/panel.ts";
+import { ToolViewPanel, type ResourceButtonId } from "../tool-view/panel.ts";
 import { panelBottom, panelTop } from "./panel.ts";
 import { installPriorityInputListener, isSidebarInputBlocked, parseSgrMouseEvent } from "./resize.ts";
 import type { ToolViewMode } from "../tool-view/types.ts";
@@ -154,10 +152,7 @@ class CollapsiblePanel implements Component {
 
 export type DefaultSidebarPanelOptions = {
   readonly getContextEstimate?: () => ContextEstimate;
-  readonly getContextDelta?: () => number | undefined;
-  readonly getActivity?: () => RunActivitySnapshot | undefined;
-  readonly getCacheHitRate?: () => number | undefined;
-  readonly getCacheTokens?: () => number | undefined;
+  readonly getTokenTotals?: () => TokenTotals;
   readonly getContextUsage: () => ContextUsage | undefined;
   readonly getModel: () => string;
   readonly getThinkingLevel: () => string;
@@ -185,7 +180,7 @@ export function createDefaultSidebarPanels(
   options: DefaultSidebarPanelOptions,
 ): readonly SidebarPanelDefinition[] {
   const collapsed = new Map<string, boolean>([[SESSION_PANEL_ID, true], [CONTEXT_PANEL_ID, false], [TOOL_VIEW_PANEL_ID, true]]);
-  const minimumSize: Record<string, number> = { [SESSION_PANEL_ID]: 4, [CONTEXT_PANEL_ID]: 10, [TOOL_VIEW_PANEL_ID]: 3 };
+  const minimumSize: Record<string, number> = { [SESSION_PANEL_ID]: 4, [CONTEXT_PANEL_ID]: 6, [TOOL_VIEW_PANEL_ID]: 5 };
   const maxAvailableSize = (id: string, terminalRows: number): number => {
     const reserved = 2 + [...collapsed.keys()]
       .filter((otherId) => otherId !== id)
@@ -219,7 +214,6 @@ export function createDefaultSidebarPanels(
         onTogglePin: options.onTogglePinSession,
         onDeleteOthers: options.onDeleteOthers,
         onOpenManager: options.onOpenSessionManager,
-        onOpenResources: options.onOpenResources,
       });
       cacheRender?.(panel);
       panel.refresh();
@@ -234,53 +228,30 @@ export function createDefaultSidebarPanels(
   }, {
     id: CONTEXT_PANEL_ID,
     layout: {
-      minSize: () => collapsed.get(CONTEXT_PANEL_ID) ? 2 : 10,
+      minSize: () => collapsed.get(CONTEXT_PANEL_ID) ? 2 : 6,
       maxSize: ({ terminalRows }) => collapsed.get(CONTEXT_PANEL_ID) ? 2 : maxAvailableSize(CONTEXT_PANEL_ID, terminalRows),
     },
     create({ tui, theme, getDesiredWidth, cacheRender }) {
       const panel = new ContextPanel(theme, {
+          tui,
           getEstimate: options.getContextEstimate,
-          getDelta: options.getContextDelta,
-          getActivity: options.getActivity,
-          now: () => Date.now(),
-          getCacheHitRate: options.getCacheHitRate,
-          getCacheTokens: options.getCacheTokens,
+          getTokenTotals: options.getTokenTotals,
           getUsage: options.getContextUsage,
           getModel: options.getModel,
           getThinkingLevel: options.getThinkingLevel,
           getDesiredWidth,
       });
       cacheRender?.(panel);
-      // Keep elapsed time current during a run, but avoid waking an idle TUI.
-      // Activity transitions call sidebar.refresh(), which starts/stops this ticker.
-      let renderTimer: ReturnType<typeof setInterval> | undefined;
-      const syncTicker = (): void => {
-        if (options.getActivity?.()?.phase === "running") {
-          if (!renderTimer) {
-            renderTimer = setInterval(() => tui.requestRender(), 1_000);
-            renderTimer.unref?.();
-          }
-        } else if (renderTimer) {
-          clearInterval(renderTimer);
-          renderTimer = undefined;
-        }
-      };
-      syncTicker();
       const collapsible = createCollapsible(CONTEXT_PANEL_ID, "КОНТЕКСТ", new AdaptiveScrollView(panel, { follow: "none", overscroll: "chain", scrollbar: "hidden" }), tui, theme);
       return {
         component: collapsible,
-        refresh(): void { syncTicker(); },
-        dispose(): void {
-          collapsible.dispose();
-          if (renderTimer) clearInterval(renderTimer);
-          renderTimer = undefined;
-        },
+        dispose(): void { collapsible.dispose(); panel.dispose(); },
       };
     },
   }, {
     id: TOOL_VIEW_PANEL_ID,
     layout: {
-      minSize: () => collapsed.get(TOOL_VIEW_PANEL_ID) ? 2 : 3,
+      minSize: () => collapsed.get(TOOL_VIEW_PANEL_ID) ? 2 : 5,
       maxSize: ({ terminalRows }) => collapsed.get(TOOL_VIEW_PANEL_ID) ? 2 : maxAvailableSize(TOOL_VIEW_PANEL_ID, terminalRows),
     },
     create({ tui, theme, getDesiredWidth, cacheRender }) {
@@ -290,6 +261,7 @@ export function createDefaultSidebarPanels(
         getMode: options.getToolViewMode,
         getUsage: options.getToolUsage,
         onSelect: options.onSelectToolViewMode,
+        onOpenResources: options.onOpenResources,
         showBottomBorder: false,
       });
       cacheRender?.(panel);

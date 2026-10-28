@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createActivityTracker, createStreamingTokenSampler } from "./activity.ts";
-import { ContextPanel } from "./panel.ts";
-
-const theme = { fg: (_color: string, value: string) => value } as any;
 
 test("streaming token sampling throttles expensive estimates without delaying first output", () => {
   let now = 1_000;
@@ -60,14 +57,6 @@ test("aborted run keeps completed tools but marks interrupted tools as cancelled
   tracker.settle(1_600, false);
   assert.equal(tracker.getSnapshot().aborted, true, "duplicate settle must not rewrite the run outcome");
 
-  const panel = new ContextPanel(theme, {
-    getDesiredWidth: () => 55,
-    getActivity: () => snapshot,
-    getUsage: () => undefined,
-    getModel: () => "model",
-    getThinkingLevel: () => "off",
-  });
-  assert.match(panel.render(55).join("\n"), /прервано/);
 
   tracker.startRun(2_000);
   assert.equal(tracker.getSnapshot().aborted, undefined);

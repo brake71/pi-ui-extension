@@ -29,8 +29,6 @@ export type SessionListItem = {
   readonly pinned?: boolean;
 };
 
-export type ResourceButtonId = "agents" | "skills" | "extensions" | "mcp";
-
 export type SessionPanelOptions = {
   readonly tui: TUI;
   readonly getDesiredWidth: () => number;
@@ -41,27 +39,8 @@ export type SessionPanelOptions = {
   readonly onTogglePin?: (session: SessionListItem) => void;
   readonly onDeleteOthers: () => void;
   readonly onOpenManager?: () => void;
-  readonly onOpenResources: (button: ResourceButtonId) => void;
   readonly now?: () => number;
 };
-
-const RESOURCE_BUTTONS: ReadonlyArray<{ id: ResourceButtonId; label: string }> = [
-  { id: "agents", label: "Правила" },
-  { id: "skills", label: "Навыки" },
-  { id: "extensions", label: "Плагины" },
-  { id: "mcp", label: "MCP" },
-];
-
-/** Shared content-column boundaries for drawing and hit-testing resource buttons. */
-function resourceButtonSpans(contentWidth: number) {
-  const baseWidth = Math.floor(contentWidth / RESOURCE_BUTTONS.length);
-  const remainder = contentWidth % RESOURCE_BUTTONS.length;
-  return RESOURCE_BUTTONS.map((button, index) => {
-    const start = index * baseWidth + Math.min(index, remainder);
-    const end = start + baseWidth + (index < remainder ? 1 : 0);
-    return { ...button, start, end };
-  });
-}
 
 type SessionRowAction = "select" | "pin" | "rename" | "delete";
 type SessionActionTarget = {
@@ -179,7 +158,6 @@ function sameTarget(left: SessionActionTarget | undefined, right: SessionActionT
 
 /** Recent sessions: click to switch, ☆/★ to pin, ✎ to rename, × to delete, or ⊗ to bulk trash. */
 export class SessionPanel implements Component {
-  private pressedResource: ResourceButtonId | undefined;
   private clearPressed = false;
   private managePressed = false;
 
@@ -217,18 +195,6 @@ export class SessionPanel implements Component {
     const rows = this.visibleSessions();
     // A row with no session (the failure hint) must never select, pin, rename or delete.
     return row >= 0 && row < rows.length ? rows[row] : undefined;
-  }
-
-  /** Buttons row sits after the session list and divider. */
-  private resourceButtonAt(box: LayoutBox, x: number, y: number): ResourceButtonId | undefined {
-    // The button row is the last content row, i.e. rect.height - 2.
-    if (y - box.rect.y !== Math.max(2, box.rect.height - 2)) return undefined;
-    const renderWidth = Math.max(1, Math.min(box.rect.width, this.options.getDesiredWidth()));
-    const contentWidth = Math.max(1, renderWidth - 4);
-    const contentColumn = x - box.rect.x - 2;
-    if (contentColumn < 0 || contentColumn >= contentWidth) return undefined;
-    return resourceButtonSpans(contentWidth)
-      .find(button => contentColumn >= button.start && contentColumn < button.end)?.id;
   }
 
   private targetAt(x: number, y: number): SessionActionTarget | undefined {
@@ -309,7 +275,6 @@ export class SessionPanel implements Component {
   private handleMouseInput(data: string): { consume: true } | undefined {
     if (isSidebarInputBlocked(this.options.tui)) {
       this.refreshPressed = this.clearPressed = this.managePressed = false;
-      this.pressedResource = undefined;
       this.pressedTarget = undefined;
       return undefined;
     }
@@ -328,19 +293,6 @@ export class SessionPanel implements Component {
         this.managePressed = false;
         if (this.isManageSessionsTarget(x, y)) {
           queueMicrotask(() => { if (!this.disposed && !isSidebarInputBlocked(this.options.tui)) this.options.onOpenManager?.(); });
-        }
-        this.options.tui.requestRender();
-        return { consume: true };
-      }
-      if (this.pressedResource) {
-        const pressed = this.pressedResource;
-        this.pressedResource = undefined;
-        const box = this.getLayoutBox();
-        const released = box ? this.resourceButtonAt(box, x, y) : undefined;
-        if (released === pressed) {
-          queueMicrotask(() => {
-            if (!this.disposed && !isSidebarInputBlocked(this.options.tui)) this.options.onOpenResources(pressed);
-          });
         }
         this.options.tui.requestRender();
         return { consume: true };
@@ -401,14 +353,6 @@ export class SessionPanel implements Component {
         }
         return { consume: true };
       }
-      if (this.pressedResource) {
-        const box = this.getLayoutBox();
-        if (!box || this.resourceButtonAt(box, x, y) !== this.pressedResource) {
-          this.pressedResource = undefined;
-          this.options.tui.requestRender();
-        }
-        return { consume: true };
-      }
       if (!this.pressedTarget) return undefined;
       if (!sameTarget(this.pressedTarget, this.targetAt(x, y))) {
         this.pressedTarget = undefined;
@@ -436,14 +380,6 @@ export class SessionPanel implements Component {
 
     if (this.isRefreshTarget(x, y)) {
       this.refreshPressed = true;
-      this.options.tui.requestRender();
-      return { consume: true };
-    }
-
-    const box = this.getLayoutBox();
-    const resourceButton = box ? this.resourceButtonAt(box, x, y) : undefined;
-    if (resourceButton) {
-      this.pressedResource = resourceButton;
       this.options.tui.requestRender();
       return { consume: true };
     }
@@ -522,23 +458,9 @@ export class SessionPanel implements Component {
       body.push(panelContent(this.theme, `⚠ Ошибка: ${this.error} · повтор ↻`, "warning", contentWidth));
     }
 
-    const buttonRow = resourceButtonSpans(contentWidth).map((button) => {
-      const segmentWidth = button.end - button.start;
-      const clipped = truncateToWidth(button.label, Math.max(0, segmentWidth), "");
-      const padding = Math.max(0, segmentWidth - visibleWidth(clipped));
-      const text = " ".repeat(Math.floor(padding / 2)) + clipped + " ".repeat(padding - Math.floor(padding / 2));
-      return this.pressedResource === button.id
-        ? this.theme.fg("warning", text)
-        : this.theme.fg("accent", text);
-    }).join("");
-    const resourceRow = panelContent(this.theme, buttonRow, "accent", contentWidth);
-
-    const divider = this.theme.fg("dim", `├${"─".repeat(Math.max(1, renderWidth - 2))}┤`);
     return [
       renderSessionTitleRow(this.theme, this.loading || this.loadInFlight ? "СЕССИИ …" : this.error ? "СЕССИИ ⚠" : "СЕССИИ ↻", renderWidth, this.clearPressed, this.managePressed, Boolean(this.options.onOpenManager)),
       ...body,
-      divider,
-      resourceRow,
       panelBottom(this.theme, renderWidth),
     ].map((line) => truncateToWidth(line, renderWidth, ""));
   }
@@ -551,7 +473,6 @@ export class SessionPanel implements Component {
     this.refreshPressed = false;
     this.clearPressed = false;
     this.managePressed = false;
-    this.pressedResource = undefined;
     this.pressedTarget = undefined;
     this.uninstallInput();
   }

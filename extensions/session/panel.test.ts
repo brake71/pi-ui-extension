@@ -40,7 +40,6 @@ test("clicking the Sessions title refreshes the saved session list", async () =>
     loadSessions: async () => snapshots[Math.min(loads++, snapshots.length - 1)]!,
     onSelect() {},
     onRename() {},
-    onOpenResources() {},
     onDelete() {},
     onDeleteOthers() {},
     now: () => 0,
@@ -72,106 +71,6 @@ test("clicking the Sessions title refreshes the saved session list", async () =>
   panel.dispose();
 });
 
-test("renders and opens the MCP resource button", async () => {
-  let listener: TuiInputListener | undefined;
-  let opened: string | undefined;
-  const tui = {
-    addInputListener(next: TuiInputListener) {
-      listener = next;
-      return () => {};
-    },
-    requestRender() {},
-    currentLayout: undefined as any,
-  } as any;
-  const panel = new SessionPanel(theme, {
-    tui,
-    getDesiredWidth: () => 40,
-    loadSessions: async () => [session("one", "One session")],
-    onSelect() {},
-    onRename() {},
-    onDelete() {},
-    onDeleteOthers() {},
-    onOpenResources(button) { opened = button; },
-    now: () => 0,
-  });
-  tui.currentLayout = {
-    root: {
-      component: panel,
-      rect: { x: 10, y: 5, width: 40, height: 5 },
-      clip: { x: 10, y: 5, width: 40, height: 5 },
-      children: [],
-    },
-  };
-
-  panel.refresh();
-  await flushAsync();
-  assert.match(panel.render(40).join("\n"), /Правила/, "resource button should display a Russian label");
-  assert.doesNotMatch(panel.render(40).join("\n"), /AGENTS\.md/, "the resource button should not display the file name");
-  assert.match(panel.render(40).join("\n"), /MCP/);
-
-  assert.deepEqual(listener?.("\u001b[<0;43;9M"), { consume: true });
-  assert.deepEqual(listener?.("\u001b[<0;43;9m"), { consume: true });
-  await flushAsync();
-
-  assert.equal(opened, "mcp");
-  panel.dispose();
-});
-
-test("resource button clicks match every rendered cell at uneven and narrow widths", async () => {
-  const cases = [
-    { width: 26, segments: ["Правил", "Навыки", "Плаги", " MCP "] },
-    { width: 25, segments: ["Правил", "Навык", "Плаги", " MCP "] },
-    { width: 27, segments: ["Правил", "Навыки", "Плагин", " MCP "] },
-    { width: 24, segments: ["Прави", "Навык", "Плаги", " MCP "] },
-    { width: 28, segments: ["Правил", "Навыки", "Плагин", " MCP  "] },
-    { width: 7, segments: ["П", "Н", "П", ""] },
-    { width: 8, segments: ["П", "Н", "П", "M"] },
-    { width: 26, desiredWidth: 40, segments: ["Правил", "Навыки", "Плаги", " MCP "] },
-    { width: 40, desiredWidth: 26, segments: ["Правил", "Навыки", "Плаги", " MCP "] },
-  ];
-  const ids = ["agents", "skills", "extensions", "mcp"];
-  for (const { width, desiredWidth = width, segments } of cases) {
-    let listener: TuiInputListener | undefined;
-    const opened: string[] = [];
-    const tui = {
-      addInputListener(next: TuiInputListener) { listener = next; return () => {}; },
-      requestRender() {},
-      currentLayout: undefined as any,
-    } as any;
-    const panel = new SessionPanel(theme, {
-      tui,
-      getDesiredWidth: () => desiredWidth,
-      loadSessions: async () => [],
-      onSelect() {}, onRename() {}, onDelete() {}, onDeleteOthers() {},
-      onOpenResources(button) { opened.push(button); },
-    });
-    panel.refresh();
-    await flushAsync();
-    const lines = panel.render(width);
-    assert.equal(stripTerminalSequences(lines.at(-2)!), `│ ${segments.join("")} │`);
-    tui.currentLayout = {
-      root: {
-        component: panel,
-        rect: { x: 10, y: 5, width, height: lines.length },
-        clip: { x: 10, y: 5, width, height: lines.length }, children: [],
-      },
-    };
-    let column = 0;
-    for (const [index, segment] of segments.entries()) {
-      for (const _cell of segment) {
-        const x = 13 + column++;
-        const y = 5 + lines.length - 1;
-        listener?.(`\u001b[<0;${x};${y}M`);
-        listener?.(`\u001b[<0;${x};${y}m`);
-        await flushAsync();
-        assert.deepEqual(opened.splice(0), [ids[index]],
-          `width ${width}, desired ${desiredWidth}, content column ${column - 1}`);
-      }
-    }
-    panel.dispose();
-  }
-});
-
 test("releasing outside the Sessions title cancels a refresh click", async () => {
   let listener: TuiInputListener | undefined;
   let loads = 0;
@@ -194,7 +93,6 @@ test("releasing outside the Sessions title cancels a refresh click", async () =>
     onRename() {},
     onDelete() {},
     onDeleteOthers() {},
-    onOpenResources() {},
   });
   tui.currentLayout = {
     root: {
@@ -238,7 +136,6 @@ test("renders ⊗ and clears every other session without refreshing", async () =
     onRename() {},
     onDelete() {},
     onDeleteOthers() { cleared++; },
-    onOpenResources() {},
     now: () => 0,
   });
   tui.currentLayout = {
@@ -278,7 +175,6 @@ test("hides ⊗ on narrow panels", async () => {
     onRename() {},
     onDelete() {},
     onDeleteOthers() {},
-    onOpenResources() {},
     now: () => 0,
   });
   tui.currentLayout = {
@@ -312,7 +208,6 @@ test("opens advanced manager from ≡ without triggering refresh or bulk trash",
     loadSessions: async () => { loads++; return [session("one", "One session")]; },
     onSelect() {}, onRename() {}, onDelete() {},
     onDeleteOthers() { cleared++; },
-    onOpenResources() {},
     onOpenManager() { opened++; },
   });
   tui.currentLayout = {
@@ -342,8 +237,7 @@ test("pinned and recent sessions remain visible in the expanded sidebar list", a
       { ...session("starred", "Important"), pinned: true },
       ...Array.from({ length: 15 }, (_, index) => session(`other-${index}`, `Recent ${index}`)),
     ],
-    onSelect() {}, onRename() {}, onDelete() {},
-    onDeleteOthers() {}, onOpenResources() {},
+    onSelect() {}, onRename() {}, onDelete() {}, onDeleteOthers() {},
   });
   panel.refresh();
   await flushAsync();
@@ -370,13 +264,13 @@ test("session row ☆/★ toggles pin in place without invoking rename, delete o
     onSelect() { calls.push("select"); },
     onRename() { calls.push("rename"); },
     onDelete() { calls.push("delete"); },
+    onDeleteOthers() {},
     onTogglePin(item) {
       assert.equal(item.id, "one");
       calls.push("pin");
       pinned = !pinned;
       panel.refresh();
     },
-    onDeleteOthers() {}, onOpenResources() {}, now: () => 0,
   });
   tui.currentLayout = {
     root: {
@@ -426,8 +320,7 @@ test("session pin hit area is distinct from rename/delete and cancelled on off-t
     tui, getDesiredWidth: () => 40,
     loadSessions: async () => [{ ...session("active", "Current session"), current: true }],
     onSelect() { calls.push("select"); }, onRename() { calls.push("rename"); },
-    onDelete() { calls.push("delete"); }, onTogglePin() { calls.push("pin"); },
-    onDeleteOthers() {}, onOpenResources() {}, now: () => 0,
+    onDelete() { calls.push("delete"); }, onDeleteOthers() {}, onTogglePin() { calls.push("pin"); },
   });
   tui.currentLayout = {
     root: {
@@ -462,8 +355,7 @@ test("active pinned session shows ● ★ before its title without changing the 
   const panel = new SessionPanel(theme, {
     tui, getDesiredWidth: () => 40,
     loadSessions: async () => [{ ...session("active", "hello"), current: true, pinned: true }],
-    onSelect() {}, onRename() {}, onDelete() {}, onTogglePin() {},
-    onDeleteOthers() {}, onOpenResources() {}, now: () => 0,
+    onSelect() {}, onRename() {}, onDelete() {}, onDeleteOthers() {}, onTogglePin() {},
   });
   panel.refresh();
   await flushAsync();
@@ -485,8 +377,7 @@ test("narrow sidebar keeps prior rename/delete actions without showing a truncat
     tui, getDesiredWidth: () => 21,
     loadSessions: async () => [session("one", "Short")],
     onSelect() { actions.push("select"); }, onRename() { actions.push("rename"); },
-    onDelete() { actions.push("delete"); }, onTogglePin() { actions.push("pin"); },
-    onDeleteOthers() {}, onOpenResources() {}, now: () => 0,
+    onDelete() { actions.push("delete"); }, onDeleteOthers() {}, onTogglePin() { actions.push("pin"); },
   });
   tui.currentLayout = {
     root: {
@@ -532,9 +423,8 @@ function panelHarness(options: { width: number; loadSessions: () => Promise<read
     tui,
     getDesiredWidth: () => options.width,
     loadSessions: options.loadSessions,
-    onSelect() {}, onRename() {}, onDelete() {},
+    onSelect() {}, onRename() {}, onDelete() {}, onDeleteOthers() {},
     onTogglePin: options.onTogglePin,
-    onDeleteOthers() {}, onOpenResources() {}, now: () => 0,
   });
   tui.currentLayout = {
     root: {
@@ -620,70 +510,6 @@ test("a refresh requested during an in-flight load runs once, and dispose stops 
   assert.equal(loader.loads(), 3, "dispose stops further loads");
   assert.doesNotMatch(panel.render(40).join("\n"), /Late session/);
 });
-
-test("after a failed refresh the error hint row triggers no session action, and drawn rows still work", async () => {
-  const loader = deferredLoader();
-  const calls: string[] = [];
-  let opened: string | undefined;
-  let listener: TuiInputListener | undefined;
-  const tui = {
-    addInputListener(next: TuiInputListener) { listener = next; return () => {}; },
-    requestRender() {},
-    currentLayout: undefined as any,
-  } as any;
-  const five = Array.from({ length: 5 }, (_, index) => session(`row-${index}`, `Row ${index}`));
-  const panel = new SessionPanel(theme, {
-    tui, getDesiredWidth: () => 40,
-    loadSessions: loader.loadSessions,
-    onSelect(item) { calls.push(`select:${item.id}`); },
-    onRename(item) { calls.push(`rename:${item.id}`); },
-    onDelete(item) { calls.push(`delete:${item.id}`); },
-    onTogglePin(item) { calls.push(`pin:${item.id}`); },
-    onDeleteOthers() { calls.push("clear"); },
-    onOpenResources(button) { opened = button; },
-    now: () => 0,
-  });
-  // Title(1) + all five rows + hint + divider + buttons + bottom = 10 lines.
-  tui.currentLayout = {
-    root: {
-      component: panel, rect: { x: 10, y: 5, width: 40, height: 10 },
-      clip: { x: 10, y: 5, width: 40, height: 10 }, children: [],
-    },
-  };
-  const press = (x: number, y: number) => {
-    listener?.(`\u001b[<0;${x};${y}M`);
-    listener?.(`\u001b[<0;${x};${y}m`);
-  };
-
-  panel.refresh();
-  loader.settle(0, five);
-  await flushAsync();
-  press(24, 6);
-  await flushAsync();
-  assert.equal(loader.loads(), 2);
-  loader.fail(1, "boom");
-  await flushAsync();
-
-  const lines = panel.render(40);
-  assert.match(stripTerminalSequences(lines[5]!), /Row 4/, "all five rows remain visible beside the hint");
-  assert.match(stripTerminalSequences(lines[6]!), /Ошибка: boom/);
-
-  // The hint follows every retained session and must never trigger a row action.
-  // Content columns start at rect.x + 2, and SGR x is one-based.
-  for (const column of [0, 31, 32, 34, 35]) press(13 + column, 12);
-  await flushAsync();
-  assert.deepEqual(calls, [], "the error hint row never selects, pins, renames or deletes");
-
-  press(13, 7);
-  await flushAsync();
-  assert.deepEqual(calls, ["select:row-0"], "a drawn row is still clickable");
-
-  press(44, 14);
-  await flushAsync();
-  assert.equal(opened, "mcp", "resource buttons keep working next to the hint");
-  panel.dispose();
-});
-
 
 test("a blank failure message still shows the retry hint instead of No saved sessions", async () => {
   const loader = deferredLoader();

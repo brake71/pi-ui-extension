@@ -30,7 +30,7 @@ test("registers sessions without removed standalone panels", () => {
   const sessions = createDefaultSidebarPanels(options()).find(panel => panel.id === SESSION_PANEL_ID)!;
   assert.equal(sessions.layout?.minSize instanceof Function ? sessions.layout.minSize({ terminalRows: 40, terminalColumns: 100 }) : sessions.layout?.minSize, 2);
   assert.equal(sessions.layout?.maxSize instanceof Function ? sessions.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : sessions.layout?.maxSize, 2);
-  assert.equal(context.layout?.minSize instanceof Function ? context.layout.minSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.minSize, 10);
+  assert.equal(context.layout?.minSize instanceof Function ? context.layout.minSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.minSize, 6);
   assert.equal(context.layout?.maxSize instanceof Function ? context.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.maxSize, 34);
   const toolView = createDefaultSidebarPanels(options()).find(panel => panel.id === TOOL_VIEW_PANEL_ID)!;
   assert.equal(toolView.layout?.maxSize instanceof Function ? toolView.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : toolView.layout?.maxSize, 2);
@@ -44,48 +44,20 @@ test("always registers Tool View", () => {
   assert.ok(ids.includes(TOOL_VIEW_PANEL_ID));
 });
 
-test("CTX refresh timer runs only during a live run and is cleared on dispose", (t) => {
-  let phase: "idle" | "running" | "settled" = "idle";
-  let renderRequests = 0;
-  const timers: Array<{ callback: () => void; delay: number; unref(): void }> = [];
-  const cleared: unknown[] = [];
-  t.mock.method(globalThis, "setInterval", (callback: () => void, delay: number) => {
-    const timer = { callback, delay, unref() {} };
-    timers.push(timer);
-    return timer as unknown as ReturnType<typeof setInterval>;
-  });
-  t.mock.method(globalThis, "clearInterval", (timer: unknown) => { cleared.push(timer); });
-
-  const context = createDefaultSidebarPanels({
-    ...options(),
-    getActivity: () => ({ phase }) as any,
-  }).find((panel) => panel.id === "context")!;
+test("Context is open by default and its layout size updates", () => {
+  const context = createDefaultSidebarPanels(options()).find((panel) => panel.id === "context")!;
   const instance = context.create({
-    tui: { requestRender() { renderRequests++; } } as any,
+    tui: { addInputListener: () => () => {}, requestRender() {} } as any,
     theme: { fg: (_color: string, value: string) => value } as any,
     getDesiredWidth: () => 50,
   });
   try {
-    assert.equal(timers.length, 0, "idle TUI must not run the timer");
-    phase = "running";
-    instance.refresh?.();
-    assert.equal(timers.length, 1);
-    assert.equal(timers[0]!.delay, 1_000);
-    instance.refresh?.();
-    assert.equal(timers.length, 1, "repeat refresh must not start duplicate intervals");
-    timers[0]!.callback();
-    assert.equal(renderRequests, 1);
-
-    phase = "settled";
-    instance.refresh?.();
-    assert.deepEqual(cleared, [timers[0]], "settling a run stops periodic renders");
-    phase = "running";
-    instance.refresh?.();
-    assert.equal(timers.length, 2, "subsequent runs restart the timer");
+    assert.match(instance.component.render(50).join("\n"), /▾ КОНТЕКСТ/);
+    assert.equal(context.layout?.minSize instanceof Function ? context.layout.minSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.minSize, 6);
+    assert.equal(context.layout?.maxSize instanceof Function ? context.layout.maxSize({ terminalRows: 40, terminalColumns: 100 }) : context.layout?.maxSize, 34);
   } finally {
     instance.dispose?.();
   }
-  assert.deepEqual(cleared, timers, "disposing the panel clears any active timer");
 });
 
 

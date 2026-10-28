@@ -23,9 +23,9 @@ pi --tui-mode fullscreen
 
 | 面板 | 功能 |
 | --- | --- |
-| **SESSIONS** | 最近会话、置顶、管理与资源快捷入口 |
-| **CTX** | 上下文组成、模型信息和运行性能 |
-| **VIEW** | Normal / Compact / Hidden 显示模式与 Tool/MCP 调用统计 |
+| **SESSIONS** | 最近会话、置顶和管理 |
+| **CTX** | 模型、上下文使用量、输入 / 输出 / 缓存 Token 及可展开的组成明细 |
+| **VIEW** | 显示模式、Tool/MCP 调用统计和资源快捷入口 |
 
 支持鼠标、滚轮和终端缩放。会话管理、资源浏览和模式选择使用居中弹窗：可用 ↑/↓ 和 Enter 选择，Esc 关闭。弹窗打开时，背景边栏操作暂停。资源详情支持只读查看和滚动。
 
@@ -55,7 +55,7 @@ pi --tui-mode fullscreen
 
 ### 资源快捷入口与 MCP
 
-SESSIONS 底部提供四类资源快捷入口：
+展开 VIEW 后，在调用统计下方可以看到纵向排列的四类资源快捷入口：
 
 - **AGENTS.md**：浏览指令资源，并查看所选文件的完整正文。
 - **Skills**：浏览可用技能及其说明。
@@ -64,19 +64,15 @@ SESSIONS 底部提供四类资源快捷入口：
 
 **MCP 状态中心**为只读界面。**已配置、已注册或已加载，不代表已经连接**；部分服务器没有可确认的连接状态。界面不展示凭据等敏感信息。连接诊断、登录和配置修改请使用 Pi 的 `/mcp` 管理器。
 
-### CTX 上下文与性能
+### CTX 简洁上下文摘要
 
-**CTX** 面板显示：
+启动时 CTX 展开，SESSIONS 和 VIEW 折叠。CTX 显示模型、Thinking Level、上下文使用百分比和进度条，以及当前会话分支内由模型服务报告的 `in / out / cache` Token 累计量。上下文使用率不同于多次请求累计的输入 / 输出 Token。点击 **Composition** 可展开英文组成明细：`System`、`Tools`、`Messages`、`Tool Results`、`Summary`、`Other` 和 `Images`。
 
-- 当前模型、Thinking Level、上下文窗口 / 使用量、本轮上下文变化量和图片数量。
-- 上下文组成：`System`、`Tools`、`Messages`、`Tool Results`、`Summary`、`Other`。
-- 本轮 turn 数和用时、平均首次输出等待时间（**TTFT**）、平均输出速度（**TPS**）、最近一次 TTFT，以及可用的缓存指标。
-
-**Token 组成是估算值**，用于了解上下文使用情况，不等于模型厂商的精确用量或计费数据。
+**Token 组成是本地估算值**，用于了解上下文使用情况，不等于模型厂商的精确用量或计费数据。
 
 ### VIEW 工具输出与 Thinking
 
-使用同一组模式按钮控制工具输出和 Thinking，默认 **Compact**。
+三行纵向排列的模式按钮（Normal、Compact、Hidden）共同控制工具输出和 Thinking，默认 **Compact**。
 
 | 模式 | 工具输出 | Thinking |
 | --- | --- | --- |

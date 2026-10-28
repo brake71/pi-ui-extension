@@ -1,198 +1,148 @@
 import type { ContextUsage, Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type Component, type TUI, type TuiInputListener } from "@earendil-works/pi-tui";
 import { panelBottom, panelContent, panelTop, type PanelColor } from "../sidebar/panel.ts";
-
+import { installPriorityInputListener, isSidebarInputBlocked, parseSgrMouseEvent } from "../sidebar/resize.ts";
 import type { ContextEstimate } from "./data.ts";
-import {
-  formatDuration,
-  formatTps,
-  formatTtft,
-  type RunActivitySnapshot,
-} from "./activity.ts";
+
+export type TokenTotals = { readonly input: number; readonly output: number; readonly cache: number };
 
 export type ContextPanelOptions = {
+  readonly tui?: TUI;
   readonly getEstimate?: () => ContextEstimate;
-  readonly getDelta?: () => number | undefined;
-  readonly getActivity?: () => RunActivitySnapshot | undefined;
-  readonly now?: () => number;
-  readonly getCacheHitRate?: () => number | undefined;
-  readonly getCacheTokens?: () => number | undefined;
+  readonly getTokenTotals?: () => TokenTotals;
   readonly getUsage: () => ContextUsage | undefined;
   readonly getModel: () => string;
   readonly getThinkingLevel: () => string;
   readonly getDesiredWidth: () => number;
 };
 
-function gradientText(text: string): string {
-  if (text.length === 0) return "";
-  const start = [80, 200, 255];
-  const end = [255, 80, 180];
-  const last = Math.max(1, text.length - 1);
-  return [...text].map((character, index) => {
-    const ratio = index / last;
-    const red = Math.round(start[0] + (end[0] - start[0]) * ratio);
-    const green = Math.round(start[1] + (end[1] - start[1]) * ratio);
-    const blue = Math.round(start[2] + (end[2] - start[2]) * ratio);
-    return `\x1b[38;2;${red};${green};${blue}m${character}`;
-  }).join("") + "\x1b[39m";
-}
+type LayoutRect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+type LayoutBox = {
+  readonly component: Component;
+  readonly rect: LayoutRect;
+  readonly clip: LayoutRect;
+  readonly children: readonly LayoutBox[];
+};
+type LayoutTui = TUI & { readonly currentLayout?: { readonly root: LayoutBox } };
 
-function formatContextWindow(contextWindow: number | undefined): string {
-  if (!contextWindow) return "?";
-
-  const scale = contextWindow >= 1_000_000 ? 1_000_000 : contextWindow >= 1_000 ? 1_000 : 1;
-  const suffix = scale === 1_000_000 ? "M" : scale === 1_000 ? "K" : "";
-  const value = contextWindow / scale;
-  const amount = value.toFixed(value >= 10 ? 0 : 1).replace(/\.0$/, "");
-  return `${amount}${suffix}`;
-}
-
-/** Activity rows moved into CTX: status/duration, AVERAGE TPS, latest TTFT. */
-function activityRows(
-  theme: Theme,
-  getActivity: () => RunActivitySnapshot | undefined,
-  now: () => number,
-  contentWidth: number,
-): string[] {
-  const activity = getActivity();
-  if (!activity) return [];
-  const at = now();
-  const duration = activity.phase === "settled"
-    ? formatDuration(activity.durationMs ?? 0)
-    : formatDuration(Math.max(0, at - (activity.startedAt ?? at)));
-  const status = activity.phase === "idle"
-    ? "Готово"
-    : `${activity.turns.length} ход. · ${activity.phase === "running" ? duration : `${activity.aborted ? "прервано" : "готово"} ${duration}`}`;
-  const plain = (value: string): string => value.replace(/\[[^\]]+\]/g, "");
-  const average = `СРЕДН. TTFT ${plain(formatTtft(activity.averagePerformance?.ttftMs))} · TPS ${plain(formatTps(activity.averagePerformance?.tokensPerSecond))}`;
-  const compact = `${activity.turns.length} ход. ${activity.phase === "settled" ? (activity.aborted ? "прервано " : "готово ") : ""}${duration}`;
-  const narrowCompact = `${activity.turns.length}х ${activity.phase === "settled" ? (activity.aborted ? "прерв. " : "готово ") : ""}${duration}`;
-  const header = [`${status} · ${average}`, status, compact, narrowCompact, average]
-    .find((candidate) => visibleWidth(candidate) <= contentWidth) ?? compact;
-  const statusColor: PanelColor = activity.phase === "running"
-    ? "warning"
-    : activity.aborted ? "warning" : activity.failedCount > 0 ? "error" : "success";
-  const performances = activity.turns.map((turn) => turn.durationMs === undefined ? activity.performance : turn.performance);
-  let ttft: number | undefined;
-  for (let index = performances.length - 1; index >= 0; index--) {
-    const value = performances[index]?.ttftMs;
-    if (value !== undefined && Number.isFinite(value)) { ttft = value; break; }
+function findLayoutBox(box: LayoutBox, component: Component): LayoutBox | undefined {
+  if (box.component === component) return box;
+  for (const child of box.children) {
+    const found = findLayoutBox(child, component);
+    if (found) return found;
   }
-  const pending = activity.phase === "running" && activity.turns.length > 0 && ttft === undefined;
-  return [
-    panelContent(theme, "─".repeat(contentWidth), "dim", contentWidth),
-    panelContent(theme, header, statusColor, contentWidth),
-    // Latest observed TTFT, not the run average: AVG TTFT stays in the header.
-    panelContent(theme, `TTFT ${formatTtft(ttft)}${pending ? " · ожидание" : ""}`, "accent", contentWidth),
-  ];
+  return undefined;
 }
 
+function contains(rect: LayoutRect, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+}
+
+function formatTokens(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return "?";
+  if (value < 1_000) return String(Math.max(0, Math.round(value)));
+  const scale = value >= 1_000_000 ? 1_000_000 : 1_000;
+  const scaled = value / scale;
+  return `${scaled.toFixed(scaled >= 10 ? 0 : 1).replace(/\.0$/, "")}${scale === 1_000_000 ? "M" : "K"}`;
+}
+
+/** The category breakdown is an estimate, not provider-billed input/output usage. */
 export class ContextPanel implements Component {
+  private compositionExpanded = false;
+  private compositionPressed = false;
+  private readonly uninstallInput: () => void;
+
   constructor(
     private readonly theme: Theme,
     private readonly options: ContextPanelOptions,
-  ) {}
+  ) {
+    const listener: TuiInputListener = (data) => this.handleMouseInput(data);
+    this.uninstallInput = options.tui ? installPriorityInputListener(options.tui, listener) : () => {};
+  }
+
+  private isCompositionTarget(x: number, y: number): boolean {
+    const tui = this.options.tui;
+    const root = tui && (tui as LayoutTui).currentLayout?.root;
+    const box = root && findLayoutBox(root, this);
+    if (!box || !contains(box.rect, x, y) || !contains(box.clip, x, y)) return false;
+    const contentWidth = Math.max(1, Math.min(box.rect.width, this.options.getDesiredWidth()) - 4);
+    const column = x - box.rect.x - 2;
+    return y === box.rect.y + (this.tokenRows(contentWidth).length + 3) && column >= 0 && column < Math.min(contentWidth, "▸ Composition".length);
+  }
+
+  private handleMouseInput(data: string): { consume: true } | undefined {
+    const tui = this.options.tui;
+    if (!tui) return undefined;
+    if (isSidebarInputBlocked(tui)) { this.compositionPressed = false; return undefined; }
+    const mouse = parseSgrMouseEvent(data);
+    if (!mouse || (mouse.button & 64) !== 0) return undefined;
+    const x = mouse.x - 1;
+    const y = mouse.y - 1;
+    if (mouse.release) {
+      if (!this.compositionPressed) return undefined;
+      this.compositionPressed = false;
+      if (this.isCompositionTarget(x, y)) this.compositionExpanded = !this.compositionExpanded;
+      tui.requestRender();
+      return { consume: true };
+    }
+    if (mouse.motion) {
+      if (!this.compositionPressed) return undefined;
+      if (!this.isCompositionTarget(x, y)) this.compositionPressed = false;
+      return { consume: true };
+    }
+    if ((mouse.button & 3) !== 0 || !this.isCompositionTarget(x, y)) return undefined;
+    this.compositionPressed = true;
+    return { consume: true };
+  }
+
+  private tokenRows(contentWidth: number): string[] {
+    const totals = this.options.getTokenTotals?.();
+    const input = `in ${formatTokens(totals?.input)}`;
+    const output = `out ${formatTokens(totals?.output)}`;
+    const cache = `cache ${formatTokens(totals?.cache)}`;
+    const full = `${input} / ${output} / ${cache}`;
+    if (visibleWidth(full) <= contentWidth) return [full];
+    const first = `${input} / ${output}`;
+    return visibleWidth(first) <= contentWidth ? [first, cache] : [input, output, cache];
+  }
 
   render(width: number): string[] {
     const renderWidth = Math.max(1, Math.min(width, this.options.getDesiredWidth()));
     const contentWidth = Math.max(1, renderWidth - 4);
-    const usage = this.options.getUsage();
-    const percent = usage?.percent;
-    const normalizedPercent = percent === null || percent === undefined
-      ? undefined
-      : Math.max(0, Math.min(100, percent));
-    const color: PanelColor = normalizedPercent === undefined
-      ? "dim"
-      : normalizedPercent >= 85
-        ? "error"
-        : normalizedPercent >= 60
-          ? "warning"
-          : "success";
-    const filledWidth = normalizedPercent === undefined
-      ? 0
-      : Math.round(contentWidth * normalizedPercent / 100);
-    const contextWindow = formatContextWindow(usage?.contextWindow);
-    const windowTokens = usage?.contextWindow;
-    const rawDelta = this.options.getDelta?.();
-    const delta = typeof rawDelta === "number" && Number.isFinite(rawDelta) && rawDelta !== 0 ? rawDelta : undefined;
-    const baseSummary = `${normalizedPercent === undefined ? "?" : `${Math.round(normalizedPercent)}%`}/${contextWindow}`;
-    const deltaSuffix = delta === undefined ? "" : ` ${delta > 0 ? "+" : "−"}${formatContextWindow(Math.abs(delta))}`;
-    const deltaColor: PanelColor = delta !== undefined && delta < 0 ? "warning" : "accent";
-    const summary = `${baseSummary}${deltaSuffix}`;
-    const cacheHitRate = this.options.getCacheHitRate?.();
-    const cacheTokens = this.options.getCacheTokens?.();
-    const cacheRateLabel = cacheHitRate === undefined ? undefined : `${Math.round(Math.max(0, Math.min(100, cacheHitRate)))}%`;
-    const cacheSummary = cacheTokens === undefined
-      ? cacheRateLabel === undefined ? "Кэш:?" : `Кэш:${cacheRateLabel}`
-      : `Кэш: ${formatContextWindow(cacheTokens)} ток. · ${cacheRateLabel ?? "?%"}`;
-    const summaryText = `${this.theme.fg(color, baseSummary)}${deltaSuffix ? this.theme.fg(deltaColor, deltaSuffix) : ""}`;
-    const cacheFitsBesideSummary = visibleWidth(summary) + visibleWidth(cacheSummary) + 1 <= contentWidth;
-    const summaryRow = cacheFitsBesideSummary
-      ? `${summaryText}${" ".repeat(contentWidth - visibleWidth(summary) - visibleWidth(cacheSummary))}${this.theme.fg(color, cacheSummary)}`
-      : summaryText;
-    const cacheRow = cacheFitsBesideSummary ? undefined : panelContent(this.theme, cacheSummary, color, contentWidth);
-    const deltaWidth = delta === undefined || delta <= 0 || filledWidth === 0 ||
-      typeof windowTokens !== "number" || !Number.isFinite(windowTokens) || windowTokens <= 0
-      ? 0
-      : Math.min(filledWidth, Math.max(1, Math.round(contentWidth * delta / windowTokens)));
-    const model = this.options.getModel() || "no-model";
-    const thinking = this.options.getThinkingLevel() || "off";
-    const modelLabel = `${this.theme.fg("accent", model)}${this.theme.fg("dim", "｜")}${gradientText(thinking)}`;
-
-    const rows: string[] = [];
-    const row = (text: string): void => { rows.push(panelContent(this.theme, text, "dim", contentWidth)); };
-    const estimate = this.options.getEstimate?.();
-    const amount = (tokens: number | undefined, percent: number | undefined): string =>
-      tokens === undefined ? "нет данных" : `~${tokens === 0 ? "0" : formatContextWindow(tokens)} ${percent === undefined ? "?" : percent.toFixed(1)}%`;
-    const alignedRow = (label: string, value: string, labelColor: PanelColor = "dim", valueColor: PanelColor = "dim"): void => {
-      const gap = contentWidth - visibleWidth(label) - visibleWidth(value) - 1;
-      if (gap >= 1) {
-        row(`${this.theme.fg(labelColor, label)}${" ".repeat(gap)}${this.theme.fg(valueColor, value)}`);
-      } else {
-        row(this.theme.fg(labelColor, truncateToWidth(label, contentWidth, "…")));
-        row(this.theme.fg(valueColor, value));
+    const percent = this.options.getUsage()?.percent;
+    const normalized = typeof percent === "number" && Number.isFinite(percent)
+      ? Math.max(0, Math.min(100, percent)) : undefined;
+    const color: PanelColor = normalized === undefined ? "dim" : normalized >= 85 ? "error" : normalized >= 60 ? "warning" : "success";
+    const percentage = normalized === undefined ? "?%" : `${Math.round(normalized)}%`;
+    const name = `${this.options.getModel() || "no-model"} · ${this.options.getThinkingLevel() || "off"} ·`;
+    const nameWidth = Math.max(0, contentWidth - visibleWidth(percentage) - 1);
+    const nameText = truncateToWidth(name, nameWidth, "…");
+    const gap = " ".repeat(Math.max(1, contentWidth - visibleWidth(nameText) - visibleWidth(percentage)));
+    const filled = normalized === undefined ? 0 : Math.round(contentWidth * normalized / 100);
+    const rows = [
+      panelTop(this.theme, "▾ КОНТЕКСТ", renderWidth),
+      panelContent(this.theme, `${this.theme.fg("accent", nameText)}${gap}${this.theme.fg(color, percentage)}`, "dim", contentWidth),
+      panelContent(this.theme, `${this.theme.fg(color, "█".repeat(filled))}${this.theme.fg("dim", "░".repeat(contentWidth - filled))}`, color, contentWidth),
+      ...this.tokenRows(contentWidth).map(text => panelContent(this.theme, text, "dim", contentWidth)),
+      panelContent(this.theme, `${this.compositionExpanded ? "▾" : "▸"} Composition`, this.compositionPressed ? "warning" : "accent", contentWidth),
+    ];
+    if (this.compositionExpanded) {
+      const estimate = this.options.getEstimate?.();
+      for (const category of estimate?.categories ?? []) {
+        const value = category.tokens === undefined ? "?" : `~${formatTokens(category.tokens)}`;
+        const percentage = category.percent === undefined ? "?" : `${Math.round(category.percent)}%`;
+        const right = `${value} ${percentage}`;
+        const label = truncateToWidth(`  ${category.name}`, Math.max(0, contentWidth - visibleWidth(right) - 1), "…");
+        rows.push(panelContent(this.theme, `${label}${" ".repeat(Math.max(1, contentWidth - visibleWidth(label) - visibleWidth(right)))}${right}`, "dim", contentWidth));
       }
-    };
-    const estimateRow = (label: string, tokens: number | undefined, percent: number | undefined): void => {
-      alignedRow(`${label}:`, amount(tokens, percent));
-    };
-    const imagesWire = estimate?.imagesWire ?? { images: 0, source: "unavailable" as const };
-    const imageLabel = imagesWire.source === "unavailable" ? "⚠ Изображения" : "Изображения";
-    const imageValue = imagesWire.source === "unavailable"
-      ? "нет данных"
-      : `${imagesWire.images} шт.`;
-    row("─".repeat(contentWidth));
-    for (const category of estimate?.categories ?? []) {
-      const labels: Record<string, string> = {
-        System: "Система", Tools: "Инструм.", Messages: "Сообщения",
-        "Tool Results": "Результаты", Summary: "Сводка", Other: "Другое",
-      };
-      estimateRow(labels[category.name] ?? category.name, category.tokens, category.percent);
+      if (!estimate) rows.push(panelContent(this.theme, "  No estimate", "dim", contentWidth));
+      const images = estimate?.imagesWire;
+      rows.push(panelContent(this.theme, `  Images ${images?.source === "unavailable" || !images ? "?" : images.images}`, "dim", contentWidth));
     }
-    if (!estimate) row("Нет данных для отображения");
-    alignedRow(imageLabel, imageValue, imagesWire.source === "unavailable" ? "warning" : "dim", "dim");
-    return [
-      panelTop(this.theme, "КОНТЕКСТ", renderWidth),
-      panelContent(this.theme, modelLabel, "accent", contentWidth),
-      panelContent(this.theme, summaryRow, color, contentWidth),
-      ...(cacheRow ? [cacheRow] : []),
-      panelContent(
-        this.theme,
-        `${this.theme.fg(color, "█".repeat(filledWidth - deltaWidth))}${deltaWidth > 0 ? this.theme.fg("accent", "█".repeat(deltaWidth)) : ""}${this.theme.fg(color, "░".repeat(contentWidth - filledWidth))}`,
-        color,
-        contentWidth,
-      ),
-      ...rows,
-      ...activityRows(
-        this.theme,
-        this.options.getActivity ?? (() => undefined),
-        this.options.now ?? Date.now,
-        contentWidth,
-      ),
-      panelBottom(this.theme, renderWidth),
-    ].map((line) => truncateToWidth(line, renderWidth, ""));
+    rows.push(panelBottom(this.theme, renderWidth));
+    return rows.map(line => truncateToWidth(line, renderWidth, ""));
   }
 
   invalidate(): void {}
-
+  dispose(): void { this.uninstallInput(); }
 }

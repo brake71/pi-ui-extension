@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth, type TuiInputListener } from "@earendil-works/pi-tui";
 import { ToolViewPanel, groupUsageCounts } from "./panel.ts";
 
 test("groups Tool View usage into Tool and MCP sections", () => {
@@ -149,19 +149,64 @@ test("keeps the mode selector visible alongside Tool and MCP usage", () => {
   const output = lines.join("\n");
   assert.match(lines[0] ?? "", /ОТОБРАЖЕНИЕ/);
   assert.doesNotMatch(lines[0] ?? "", /TOOL VIEW/);
-  assert.equal(lines.length, 12);
-  assert.match(lines[1] ?? "", /Полный.*Краткий.*Скрытый/);
-  assert.equal(lines[2], `├${"─".repeat(58)}┤`, "mode separator must reach both borders with no padding");
-  assert.match(lines[3] ?? "", /СЕЙЧАС\s+ВСЕГО/);
+  assert.equal(lines.length, 14);
+  assert.match(lines[1] ?? "", /○ Normal/);
+  assert.match(lines[2] ?? "", /● Compact/);
+  assert.match(lines[3] ?? "", /○ Hidden/);
+  assert.equal(lines[4], `├${"─".repeat(58)}┤`, "mode separator must reach both borders with no padding");
+  assert.match(lines[5] ?? "", /СЕЙЧАС\s+ВСЕГО/);
   assert.match(output, /ВЫЗОВЫ · 1/);
   assert.match(output, /MCP · 1/);
   assert.doesNotMatch(lines.find((line) => line.includes("ВЫЗОВЫ")) ?? "", /\d+\/\d+/);
   assert.doesNotMatch(lines.find((line) => line.includes("MCP ·")) ?? "", /\d+\/\d+/);
-  assert.match(output, /Полный/);
-  assert.match(output, /Краткий/);
-  assert.match(output, /Скрытый/);
+  assert.match(output, /Normal/);
+  assert.match(output, /Compact/);
+  assert.match(output, /Hidden/);
   assert.match(output, /ВЫЗОВЫ/);
   assert.match(output, /read/);
   assert.match(output, /MCP/);
   assert.match(output, /context-mode/);
+});
+
+test("vertical mode rows remain readable and individually clickable", async () => {
+  let listener: TuiInputListener | undefined;
+  let selected: "normal" | "compact" | "hidden" = "compact";
+  const tui = {
+    addInputListener(next: TuiInputListener) { listener = next; return () => {}; },
+    requestRender() {},
+    currentLayout: undefined as any,
+  } as any;
+  const theme = { fg: (_color: string, text: string) => text } as any;
+  const panel = new ToolViewPanel(theme, {
+    tui,
+    getDesiredWidth: () => 18,
+    getMode: () => selected,
+    getUsage: () => undefined,
+    onSelect(mode) { selected = mode; },
+  });
+  const lines = panel.render(18);
+  assert.match(lines[1]!, /Normal/);
+  assert.match(lines[2]!, /Compact/);
+  assert.match(lines[3]!, /Hidden/);
+  assert.ok(lines.every(line => visibleWidth(line) <= 18));
+  tui.currentLayout = { root: {
+    component: panel,
+    rect: { x: 10, y: 5, width: 18, height: lines.length },
+    clip: { x: 10, y: 5, width: 18, height: lines.length },
+    children: [],
+  } };
+  const click = async (row: number, releaseRow = row) => {
+    listener?.(`\u001b[<0;15;${7 + row}M`);
+    listener?.(`\u001b[<0;15;${7 + releaseRow}m`);
+    await new Promise<void>(resolve => setImmediate(resolve));
+  };
+  await click(0);
+  assert.equal(selected, "normal");
+  await click(2);
+  assert.equal(selected, "hidden");
+  await click(1, 2);
+  assert.equal(selected, "hidden", "release on another row cancels selection");
+  await click(1);
+  assert.equal(selected, "compact");
+  panel.dispose();
 });

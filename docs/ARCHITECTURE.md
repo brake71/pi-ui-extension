@@ -8,11 +8,11 @@ These notes document implementation details and conservative compatibility choic
 
 The extension composes three responsive panels in Pi's fullscreen terminal UI:
 
-- **SESSIONS** — quick history, advanced manager, pinning, and resource shortcuts.
-- **CTX** — estimates and observable runtime measurements.
-- **VIEW** — unified tool/Thinking modes and direct/nested/MCP usage.
+- **SESSIONS** — quick history, advanced manager, and pinning.
+- **CTX** — compact context usage and expandable composition estimates.
+- **VIEW** — unified tool/Thinking modes, direct/nested/MCP usage, and resource shortcuts.
 
-The sidebar supports mouse events, wheel scrolling, terminal resizing, and scrollable panels in smaller spaces. Its owned panels share render output by width within each layout frame; the cache is cleared at the next root layout pass, so model, usage, theme and elapsed-time updates remain live. Regular TUI is not a supported host layout. Footer rendering reports the working directory and Git branch and clips long paths to fit the terminal.
+The sidebar supports mouse events, wheel scrolling, terminal resizing, and scrollable panels in smaller spaces. Its owned panels share render output by width within each layout frame; the cache is cleared at the next root layout pass, so model, usage, and theme updates remain live. Regular TUI is not a supported host layout. Footer rendering reports the working directory and Git branch and clips long paths to fit the terminal.
 
 Resource shortcuts inspect current project/Pi instruction, skill, extension, and MCP resources. They do not attempt to load or connect missing resources.
 
@@ -42,15 +42,15 @@ A Pi process **not running this extension cannot be reliably detected** by this 
 
 ## CTX estimation and refresh
 
-CTX shows the active model and Thinking level, context size and usage, current-run delta, image count, category composition, and speed measurements (run turns/duration, average TTFT/TPS, latest TTFT, cache indicators where observable).
+CTX starts open with the active model, Thinking level, context percentage and bar, and provider-reported `in / out / cache` tokens accumulated for the active branch. Composition starts collapsed; clicking it reveals English category names and image count. Input/output totals across requests are distinct from current context-window utilization. Sessions and View start collapsed; resource shortcuts are four rows at the bottom of View.
 
 The `System`, `Tools`, `Messages`, `Tool Results`, `Summary`, and `Other` breakdown uses **local heuristic token estimates**. It is for composition and trend analysis, **not provider-exact tokenization or billing**. For tools, prefer the actual observable provider-request tool payload; before a provider request is available, estimate Pi's enabled tool schemas instead.
 
 Restoration uses the SDK's active session projection, including context edits and compaction. Removed or replaced content is not reintroduced when a run settles; system messages are accounted for separately through the effective system prompt.
 
-To reduce redraw work, streaming token estimates are sampled at most once every **150 ms**, while the first valid token update is shown immediately. Unchanged estimates do not trigger redundant CTX redraws. The elapsed-time ticker runs only while an agent run is active and is cleaned up when it settles or the panel is disposed.
+Provider-reported input, output, and cache-read/write totals are restored from assistant messages on the active branch and updated as new assistant messages finish. No elapsed-time ticker is needed for this compact view.
 
-Pi emits `before_agent_start` for user prompts and idle custom-triggered runs. Therefore, CTX deltas and Tool/MCP **RUN** counters reset for each agent run, not strictly for each user question. A cancelled/aborted run should not be reported as a tool failure.
+Pi emits `before_agent_start` for user prompts and idle custom-triggered runs. Tool/MCP **RUN** counters reset for each agent run, not strictly for each user question. A cancelled/aborted run should not be reported as a tool failure.
 
 ## Thinking display and measured duration
 
