@@ -158,15 +158,22 @@ function errorText(error: unknown): string {
 }
 
 const SORT_CHOICES: ReadonlyArray<{ sort: SessionSort; label: string }> = [
-  { sort: "recent", label: "最近更新" },
-  { sort: "oldest", label: "最早更新" },
-  { sort: "prompts", label: "提问次数" },
-  { sort: "title", label: "会话标题" },
+  { sort: "recent", label: "Сначала новые" },
+  { sort: "oldest", label: "Сначала старые" },
+  { sort: "prompts", label: "По числу вопросов" },
+  { sort: "title", label: "По названию" },
 ];
+
+function pluralize(count: number, forms: readonly [string, string, string]): string {
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 14) return forms[2];
+  const mod10 = count % 10;
+  return mod10 === 1 ? forms[0] : mod10 >= 2 && mod10 <= 4 ? forms[1] : forms[2];
+}
 
 function safeLabel(title: string): string {
   const cleaned = stripTerminalSequences(title).replace(/[\u0000-\u001f\u007f]/g, " ")
-    .replace(/\s+/g, " ").trim() || "(未命名会话)";
+    .replace(/\s+/g, " ").trim() || "(без названия)";
   return truncateToWidth(cleaned, 65, "…");
 }
 
@@ -178,6 +185,7 @@ export async function openSessionManager(options: SessionManagerOptions): Promis
   let page = 0;
   let sessions: readonly SessionListItem[] = [];
   let loadError: string | undefined;
+  const expanded = new Set<string>();
   /** Keeps the last good list, sort, filter and page when a load fails. */
   const reload = async (): Promise<void> => {
     try {
@@ -186,62 +194,98 @@ export async function openSessionManager(options: SessionManagerOptions): Promis
     } catch (error) {
       // A blank message must still read as a failure, never as an empty list.
       loadError = errorText(error);
-      ui.notify(`刷新会话列表失败：${loadError}`, "warning");
+      ui.notify(`Не удалось обновить список сессий: ${loadError}`, "warning");
     }
   };
   await reload();
   for (;;) {
-    const current = getSessionPage(sessions, query, sort, page);
+    const children = new Map<string, SessionListItem[]>();
+    for (const session of sessions) if (session.parentId) {
+      const list = children.get(session.parentId) ?? [];
+      list.push(session);
+      children.set(session.parentId, list);
+    }
+    const roots = sessions.filter(session => !session.parentId);
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const matchesSession = (session: SessionListItem): boolean => !normalizedQuery ||
+      session.title.toLocaleLowerCase().includes(normalizedQuery) || session.id.toLocaleLowerCase().includes(normalizedQuery);
+    const matchesTree = (session: SessionListItem, ancestors = new Set<string>()): boolean => {
+      if (matchesSession(session)) return true;
+      if (ancestors.has(session.id)) return false;
+      const nextAncestors = new Set(ancestors).add(session.id);
+      return (children.get(session.id) ?? []).some(child => matchesTree(child, nextAncestors));
+    };
+    const candidates = normalizedQuery ? roots.filter(root => matchesTree(root)) : roots;
+    const current = getSessionPage(candidates, "", sort, page);
     page = current.page;
-    const labels = current.items.map((session, index) =>
-      `${index + 1}. ${session.pinned ? "★ " : ""}${session.current ? "● " : ""}${safeLabel(session.title)} · ${session.userPromptCount ?? "?"} 次提问`,
-    );
+    const labelFor = (session: SessionListItem, index: number, indent = "") =>
+      `${indent}${index + 1}. ${session.pinned ? "★ " : ""}${session.current ? "● " : ""}${safeLabel(session.title)} · ${session.userPromptCount ?? "?"} ${pluralize(session.userPromptCount ?? 0, ["вопрос", "вопроса", "вопросов"])}`;
+    const rows: Array<{ label: string; session?: SessionListItem; groupId?: string }> = [];
+    const append = (session: SessionListItem, index: number, indent = "") => {
+      rows.push({ label: labelFor(session, index, indent), session });
+      const nested = (children.get(session.id) ?? []).sort((a, b) => b.modified.getTime() - a.modified.getTime());
+      if (!nested.length) return;
+      const searchExpand = normalizedQuery && !matchesSession(session) && nested.some(child => matchesTree(child));
+      const isExpanded = expanded.has(session.id) || Boolean(searchExpand);
+      rows.push({ label: `${indent}${isExpanded ? "▾" : "▸"} Подчинённые сессии (${nested.length}) · ${safeLabel(session.title)}`, groupId: session.id });
+      if (isExpanded) {
+        const visibleChildren = normalizedQuery ? nested.filter(child => matchesTree(child)) : nested;
+        visibleChildren.forEach((child, childIndex) => append(child, childIndex, `${indent}  `));
+      }
+    };
+    current.items.forEach((session, index) => append(session, index));
+    const labels = rows.map(row => row.label);
     const actions = [
-      "⌕ 搜索 / 清除搜索",
-      `↕ 排序：${SORT_CHOICES.find((choice) => choice.sort === sort)!.label}`,
-      ...(page > 0 ? ["← 上一页"] : []),
-      ...(page + 1 < current.pages ? ["下一页 →"] : []),
-      "↻ 刷新列表",
-      "关闭",
+      "⌕ Найти / сбросить поиск",
+      `↕ Сортировка: ${SORT_CHOICES.find((choice) => choice.sort === sort)!.label}`,
+      ...(page > 0 ? ["← Предыдущая страница"] : []),
+      ...(page + 1 < current.pages ? ["Следующая страница →"] : []),
+      "↻ Обновить список",
+      "Закрыть",
     ];
     const choice = await ui.select(
-      `Sessions · ${current.total}/${sessions.length} · ${page + 1}/${current.pages}${query ? ` · 搜索：${safeLabel(query)}` : ""}` +
-        (loadError ? ` · ⚠ 加载失败：${safeLabel(loadError)}` : ""),
+      `Сессии · ${current.total}/${sessions.length} · ${page + 1}/${current.pages}${query ? ` · Поиск: ${safeLabel(query)}` : ""}` +
+        (loadError ? ` · ⚠ Ошибка загрузки: ${safeLabel(loadError)}` : ""),
       [...labels, ...actions],
     );
-    if (!choice || choice === "关闭") return;
+    if (!choice || choice === "Закрыть") return;
     if (choice === actions[0]) {
-      const next = await ui.input("搜索会话标题或 ID（留空清除搜索）", query);
+      const next = await ui.input("Название сессии или ID (пусто — сбросить поиск)", query);
       if (next !== undefined) { query = next.trim(); page = 0; }
     } else if (choice === actions[1]) {
       const names = SORT_CHOICES.map(({ label, sort: key }) => `${key === sort ? "● " : "○ "}${label}`);
-      const selection = await ui.select("会话排序（置顶始终优先）", names);
+      const selection = await ui.select("Сортировка (закреплённые сессии всегда выше)", names);
       const index = names.indexOf(selection ?? "");
       if (index >= 0) { sort = SORT_CHOICES[index]!.sort; page = 0; }
-    } else if (choice === "← 上一页") {
+    } else if (choice === "← Предыдущая страница") {
       page--;
-    } else if (choice === "下一页 →") {
+    } else if (choice === "Следующая страница →") {
       page++;
-    } else if (choice === "↻ 刷新列表") {
+    } else if (choice === "↻ Обновить список") {
       await reload();
     } else {
-      const index = labels.indexOf(choice);
-      const session = current.items[index];
-      if (index < 0 || !session) continue;
+      const row = rows.find(item => item.label === choice);
+      if (row?.groupId) {
+        if (expanded.has(row.groupId)) expanded.delete(row.groupId);
+        else expanded.add(row.groupId);
+        continue;
+      }
+      const session = row?.session;
+      if (!session) continue;
       const menu = [
-        ...(session.current ? [] : ["切换到此会话"]),
-        "重命名",
-        session.pinned ? "取消置顶" : "置顶会话",
-        ...(session.current ? [] : ["移到回收站"]),
-        "返回列表",
+        ...(session.current ? [] : ["Переключиться на сессию"]),
+        "Переименовать",
+        session.pinned ? "Открепить" : "Закрепить",
+        ...(session.current ? [] : ["Переместить в корзину"]),
+        "Назад к списку",
       ];
-      const action = await ui.select(`${safeLabel(session.title)} · 管理`, menu);
-      if (action === "置顶会话" || action === "取消置顶") {
+      const action = await ui.select(`${safeLabel(session.title)} · Управление`, menu);
+      if (action === "Закрепить" || action === "Открепить") {
         let pinned: boolean;
         try {
           pinned = options.togglePin(session.id);
         } catch (error) {
-          ui.notify(`保存置顶失败：${error instanceof Error ? error.message : String(error)}`, "error");
+          ui.notify(`Не удалось сохранить закрепление: ${error instanceof Error ? error.message : String(error)}`, "error");
           continue;
         }
         // Already persisted: show it even if the reload below fails.
@@ -250,20 +294,20 @@ export async function openSessionManager(options: SessionManagerOptions): Promis
           options.onPinChanged();
         } catch (error) {
           // The pin is already saved: a sidebar refresh failure is not a save failure.
-          ui.notify(`刷新侧边栏失败：${errorText(error)}`, "warning");
+          ui.notify(`Не удалось обновить боковую панель: ${errorText(error)}`, "warning");
         }
         page = 0;
         await reload();
-        ui.notify(pinned ? "会话已置顶" : "已取消置顶", "info");
-      } else if (action === "移到回收站") {
+        ui.notify(pinned ? "Сессия закреплена." : "Закрепление снято.", "info");
+      } else if (action === "Переместить в корзину") {
         // The central delete command owns the final confirmation for both
         // the sidebar and this manager. Never present two successive prompts.
         options.onDelete(session);
         return;
-      } else if (action === "切换到此会话") {
+      } else if (action === "Переключиться на сессию") {
         options.onSwitch(session);
         return;
-      } else if (action === "重命名") {
+      } else if (action === "Переименовать") {
         options.onRename(session);
         return;
       }

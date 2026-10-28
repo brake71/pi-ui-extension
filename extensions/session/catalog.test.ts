@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appendFileSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,6 +70,26 @@ test("catalog shares unchanged summaries, reads only changed files and tracks di
     assert.equal((await catalog(root, directory)).length, 1);
     rmSync(directory, { recursive: true });
     assert.deepEqual(await catalog(root, directory), []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("catalog resolves parent session paths to same-project parent IDs and ignores orphans", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-catalog-tree-")), directory = join(root, "sessions");
+  try {
+    const parent = SessionManager.create(root, directory);
+    parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+    const child = SessionManager.create(root, directory);
+    child.appendMessage({ role: "user", content: "child", timestamp: 2 });
+    const childPath = child.getSessionFile()!;
+    writeFileSync(childPath, readFileSync(childPath, "utf8").replace('"cwd":', `"parentSession":${JSON.stringify(parent.getSessionFile())},"cwd":`));
+    const orphan = SessionManager.create(root, directory);
+    orphan.appendMessage({ role: "user", content: "orphan", timestamp: 3 });
+    const orphanPath = orphan.getSessionFile()!;
+    writeFileSync(orphanPath, readFileSync(orphanPath, "utf8").replace('"cwd":', `"parentSession":${JSON.stringify(join(directory, "missing.jsonl"))},"cwd":`));
+    const summaries = await createSessionCatalog()(root, directory);
+    assert.equal(summaries.find(item => item.id === child.getSessionId())?.parentId, parent.getSessionId());
+    assert.equal(summaries.find(item => item.id === child.getSessionId())?.parentSession, parent.getSessionFile());
+    assert.equal(summaries.find(item => item.id === orphan.getSessionId())?.parentId, undefined);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

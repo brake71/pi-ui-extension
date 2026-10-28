@@ -93,26 +93,26 @@ export function showResourceDialog(
   content?: string,
 ): void {
   if (content !== undefined) {
-    void ctx.ui.editor("AGENTS.md (read-only · Esc to close)", content).then(() => {});
+    void ctx.ui.editor("AGENTS.md (только чтение · Esc — закрыть)", content).then(() => {});
     return;
   }
   const title = button === "skills"
-    ? "Skills"
+    ? "Навыки"
     : button === "extensions"
-      ? "Extensions"
+      ? "Плагины"
       : button === "mcp"
         ? "MCP"
-        : "Context";
+        : "Контекст";
   const visible = resourceDialogOptions(rows);
   void ctx.ui.select(
-    `${title} (${rows.length}) · ↵ full description`,
+    `${title} (${rows.length}) · ↵ подробное описание`,
     visible,
   ).then((choice) => {
     if (!choice) return;
     const index = visible.indexOf(choice);
     const row = index >= 0 ? rows[index] : undefined;
     if (row) {
-      void ctx.ui.editor(`${row.name} (read-only · Esc to close)`, row.content ?? row.description).then(() => {});
+      void ctx.ui.editor(`${row.name} (только чтение · Esc — закрыть)`, row.content ?? row.description).then(() => {});
     }
   });
 }
@@ -126,37 +126,37 @@ export function showMcpStatusDialog(
     name: server.name,
     description: describeMcpStatus(server),
     details: [
-      `Server: ${server.name}`,
-      `Source: ${server.source}`,
-      `Enabled: ${server.enabled ? "yes" : "no"}`,
-      `Observed by adapter: ${server.loaded ? "yes" : "no"}`,
-      `Status: ${describeMcpStatus(server)}`,
+      `Сервер: ${server.name}`,
+      `Источник: ${server.source}`,
+      `Включён: ${server.enabled ? "да" : "нет"}`,
+      `Загружен адаптером: ${server.loaded ? "да" : "нет"}`,
+      `Состояние: ${describeMcpStatus(server)}`,
       "",
-      "Only an adapter's explicit connection state establishes connected/failed.",
-      "Pi native connection health is not exposed to UI extensions.",
-      "Use Pi's built-in /mcp manager for live connection details.",
+      "Статус «подключено» или «ошибка» показывается только при явном подтверждении адаптера.",
+      "Pi не передаёт расширениям состояние собственных MCP-подключений.",
+      "Для проверки соединения используйте встроенную команду /mcp.",
     ].join("\n"),
   }));
   const warnings = snapshot.warnings.map((warning) => ({
     name: "⚠ Configuration warning",
     description: warning,
-    details: `${warning}\nCheck your MCP configuration with Pi's built-in /mcp manager.`,
+    details: `${warning}\nПроверьте настройки MCP встроенной командой /mcp.`,
   }));
   const all = [...rows, ...warnings];
   if (all.length === 0) {
-    ctx.ui.notify("No MCP servers found. Use /mcp to configure servers.", "info");
+    ctx.ui.notify("Серверы MCP не найдены. Настройте их командой /mcp.", "info");
     return;
   }
   const choices = resourceDialogOptions(all);
   const enabledCount = snapshot.servers.filter((server) => server.enabled).length;
   void ctx.ui.select(
-    `MCP Status · ${enabledCount} enabled / ${snapshot.servers.length} total · ↵ details`,
+    `Состояние MCP · включено: ${enabledCount} / всего: ${snapshot.servers.length} · ↵ подробности`,
     choices,
   ).then((choice) => {
     if (!choice) return;
     const index = choices.indexOf(choice);
     const item = all[index];
-    if (item) void ctx.ui.editor(`${item.name} · MCP (read-only)`, item.details).then(() => {});
+    if (item) void ctx.ui.editor(`${item.name} · MCP (только чтение)`, item.details).then(() => {});
   });
 }
 
@@ -173,12 +173,12 @@ export async function loadResourceEntries(
     .filter((command) => command.source === "skill")
     .map((command) => ({
       name: command.name.replace(/^skill:/, ""),
-      description: command.description?.replace(/\s+/g, " ").trim() || "Skill command",
+      description: command.description?.replace(/\s+/g, " ").trim() || "Команда навыка",
     }));
   const agentDir = getAgentDir();
   if (button === "agents") return loadProjectContextFiles({ cwd, agentDir }).map((file) => ({
     name: basename(file.path),
-    description: file.content.split(/\r?\n/).map(line => line.trim()).find(line => line && !line.startsWith("#")) ?? "Context file",
+    description: file.content.split(/\r?\n/).map(line => line.trim()).find(line => line && !line.startsWith("#")) ?? "Файл контекста",
     content: file.content,
   }));
 
@@ -251,7 +251,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
       activeLeaseHealthy = true;
     } catch (error) {
       activeLeaseHealthy = false;
-      ctx.ui.notify(`Active session protection unavailable: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      ctx.ui.notify(`Не работает защита активной сессии: ${error instanceof Error ? error.message : String(error)}`, "warning");
     }
   };
   let mcpResources: readonly ResourceEntry[] = [];
@@ -305,6 +305,8 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
     const sessions = await sessionCatalog(ctx.cwd, ctx.sessionManager.getSessionDir());
     return sortedSessions(sessions.map((session) => ({
       id: session.id,
+      ...(session.parentId === undefined ? {} : { parentId: session.parentId }),
+      ...(session.parentSession === undefined ? {} : { isSubagent: true }),
       title: session.name ?? session.firstMessage,
       modified: session.modified,
       userPromptCount: session.userPromptCount,
@@ -314,7 +316,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   };
   const canManageSessions = (ctx: ExtensionContext): boolean => {
     if (ctx.isIdle()) return true;
-    ctx.ui.notify("Wait for the current run to finish before managing sessions", "warning");
+    ctx.ui.notify("Дождитесь завершения текущего запуска, чтобы управлять сессиями.", "warning");
     return false;
   };
   const selectSession = (ctx: ExtensionContext, session: SessionListItem): void => {
@@ -348,7 +350,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
         onDelete: (session) => deleteSession(ctx, session),
       });
     } catch (error) {
-      ctx.ui.notify(`Failed to open Sessions manager: ${error instanceof Error ? error.message : String(error)}`, "error");
+      ctx.ui.notify(`Не удалось открыть список сессий: ${error instanceof Error ? error.message : String(error)}`, "error");
     } finally {
       sessionManagerOpen = false;
     }
@@ -375,16 +377,16 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   });
 
   pi.registerCommand(SESSION_MANAGER_COMMAND, {
-    description: "Search, sort, page, pin, switch, rename and delete saved sessions",
+    description: "Искать, сортировать, закреплять, переключать, переименовывать и удалять сессии",
     handler: async (_args, ctx) => launchSessionManager(ctx),
   });
 
   pi.registerCommand(SESSION_RENAME_COMMAND, {
-    description: "Rename a saved session selected from the sidebar",
+    description: "Переименовать выбранную в панели сессию",
     handler: async (args, ctx) => {
       const sessionId = args.trim();
       if (!sessionId) {
-        ctx.ui.notify("Missing session id", "error");
+        ctx.ui.notify("Не указан ID сессии", "error");
         return;
       }
 
@@ -397,7 +399,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           return;
         }
         const title = target.name ?? target.firstMessage;
-        const nextName = await createDialogUI(ctx.ui).input("Rename session", title);
+        const nextName = await createDialogUI(ctx.ui).input("Переименовать сессию", title);
         const next = nextName?.trim();
         if (!next) return;
 
@@ -407,21 +409,21 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           SessionManager.open(target.path).appendSessionInfo(next);
           refreshSessions();
         }
-        ctx.ui.notify("Session renamed", "info");
+        ctx.ui.notify("Сессия переименована.", "info");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Failed to rename session: ${message}`, "error");
+        ctx.ui.notify(`Не удалось переименовать сессию: ${message}`, "error");
       }
     },
   });
 
   pi.registerCommand(SESSION_DELETE_COMMAND, {
-    description: "Delete a saved session selected from the sidebar",
+    description: "Удалить выбранную в панели сессию",
     handler: async (args, ctx) => {
       if (!canManageSessions(ctx)) return;
       const sessionId = args.trim();
       if (!sessionId) {
-        ctx.ui.notify("Missing session id", "error");
+        ctx.ui.notify("Не указан ID сессии", "error");
         return;
       }
       if (sessionId === ctx.sessionManager.getSessionId()) {
@@ -439,8 +441,8 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
         }
         const before = statSync(target.path);
         const confirmed = await createDialogUI(ctx.ui).confirm(
-          "Delete session",
-          `Move “${target.name ?? target.firstMessage ?? target.id}” to trash? This session cannot be restored from Pi; it can be recovered from your system trash.`,
+          "Удалить сессию",
+          `Переместить «${target.name ?? target.firstMessage ?? target.id}» в корзину? Её можно восстановить из системной корзины.`,
         );
         if (!confirmed) return;
         // Revalidate after the user interacted with the modal.
@@ -448,13 +450,13 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
             (await SessionManager.list(ctx.cwd, ctx.sessionManager.getSessionDir()))
               .find((session) => session.id === sessionId)?.path !== target.path) return;
         if (readActiveSessionPaths(ACTIVE_SESSIONS_DIR).has(resolve(target.path))) {
-          ctx.ui.notify("Session is in use by another Pi instance; deletion cancelled", "warning");
+          ctx.ui.notify("Сессия используется другим процессом Pi; удаление отменено.", "warning");
           return;
         }
         const after = statSync(target.path);
         if (before.dev !== after.dev || before.ino !== after.ino ||
             before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
-          ctx.ui.notify("Session changed during confirmation; deletion cancelled", "warning");
+          ctx.ui.notify("Сессия изменилась во время подтверждения; удаление отменено.", "warning");
           return;
         }
         const result = await deleteSessionFile(pi, target.path);
@@ -463,7 +465,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           return;
         }
         refreshSessions();
-        ctx.ui.notify("Session moved to trash", "info");
+        ctx.ui.notify("Сессия перемещена в корзину.", "info");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         ctx.ui.notify(`Failed to delete session: ${message}`, "error");
@@ -472,12 +474,12 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   });
 
   pi.registerCommand(SESSION_CLEAR_COMMAND, {
-    description: "Preview and move eligible noncurrent, unpinned saved sessions to trash",
+    description: "Просмотреть и переместить в корзину остальные незакреплённые сессии",
     handler: async (_args, ctx) => {
       try {
         if (!canManageSessions(ctx)) return;
         if (!activeLeaseHealthy) {
-          ctx.ui.notify("Bulk cleanup is disabled: active session protection is unavailable", "error");
+          ctx.ui.notify("Очистка отключена: защита активных сессий недоступна.", "error");
           return;
         }
         const currentSessionId = ctx.sessionManager.getSessionId();
@@ -502,26 +504,26 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
         refreshSessions();
         if (result.failed > 0) {
           ctx.ui.notify(
-            `Cleared ${result.deleted}; ${result.skipped} protected/changed; ${result.failed} failed: ${result.firstError ?? "unknown error"}`,
+            `Удалено: ${result.deleted}; пропущено (защищены/изменены): ${result.skipped}; ошибок: ${result.failed}: ${result.firstError ?? "неизвестная ошибка"}`,
             "error",
           );
           return;
         }
-        ctx.ui.notify(`Cleared ${result.deleted} session(s) to trash; ${result.skipped} protected/changed`, "info");
+        ctx.ui.notify(`В корзину перемещено сессий: ${result.deleted}; пропущено (защищены/изменены): ${result.skipped}`, "info");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Failed to clear sessions: ${message}`, "error");
+        ctx.ui.notify(`Не удалось очистить список сессий: ${message}`, "error");
       }
     },
   });
 
   pi.registerCommand(SESSION_SWITCH_COMMAND, {
-    description: "Switch to a saved session selected from the sidebar",
+    description: "Переключиться на выбранную в панели сессию",
     handler: async (args, ctx) => {
       const sessionId = args.trim();
       if (!sessionId) {
         switchRequested = false;
-        ctx.ui.notify("Missing session id", "error");
+        ctx.ui.notify("Не указан ID сессии", "error");
         return;
       }
 
@@ -545,7 +547,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
         // Do not use the old command ctx after a successful replacement.
         if (!result.cancelled) return;
         switchRequested = false;
-        ctx.ui.notify("Session switch cancelled", "info");
+        ctx.ui.notify("Переключение сессии отменено.", "info");
       } catch (error) {
         switchRequested = false;
         const message = error instanceof Error ? error.message : String(error);
@@ -643,6 +645,9 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
   };
 
   pi.on("session_start", (_event, ctx) => {
+    // A successful switch replaces the session without returning through the
+    // command's old context. Release the click guard for the newly active session.
+    switchRequested = false;
     // A reload may start without session_shutdown. Release the old layout and
     // mouse listeners while their original context is still valid; otherwise
     // a second sidebar can wrap the first and leave priority listeners behind.
@@ -677,6 +682,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           getContextDelta: () => contextEstimates.getDelta(),
           getActivity: () => activity?.getSnapshot(),
           getCacheHitRate: cacheHitRate,
+          getCacheTokens: () => cacheReadTokens + cacheWriteTokens,
           getModel: () => ctx.model?.id ?? "no-model",
           getThinkingLevel: () => pi.getThinkingLevel(),
           getToolViewMode: () => toolViewMode,
@@ -684,7 +690,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           onSelectToolViewMode: (mode): void => {
             void toolView.setMode(mode, ctx);
           },
-          loadSessions: () => loadSessionRows(ctx),
+          loadSessions: async () => (await loadSessionRows(ctx)).filter((session) => !session.isSubagent),
           onSelectSession: (session): void => selectSession(ctx, session),
           onRenameSession: (session): void => renameSession(ctx, session),
           onDeleteSession: (session): void => deleteSession(ctx, session),
@@ -692,22 +698,22 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
             try {
               const pinned = toggleSessionPin(SESSION_PINS_FILE, session.id);
               refreshSessions();
-              ctx.ui.notify(pinned ? "会话已置顶" : "已取消置顶", "info");
+              ctx.ui.notify(pinned ? "Сессия закреплена." : "Закрепление снято.", "info");
             } catch (error) {
-              ctx.ui.notify(`保存置顶失败：${error instanceof Error ? error.message : String(error)}`, "error");
+              ctx.ui.notify(`Не удалось сохранить закрепление: ${error instanceof Error ? error.message : String(error)}`, "error");
             }
           },
           onOpenSessionManager: (): void => { void launchSessionManager(ctx); },
           onDeleteOthers: (): void => {
             if (!ctx.isIdle()) {
-              ctx.ui.notify("Wait for the current run to finish before clearing sessions", "warning");
+              ctx.ui.notify("Дождитесь завершения текущего запуска, чтобы очистить список сессий.", "warning");
               return;
             }
             pi.sendUserMessage(`/${SESSION_CLEAR_COMMAND}`, { expandPromptTemplates: true });
           },
           onOpenResources: (button): void => {
             if (!ctx.isIdle()) {
-              ctx.ui.notify("Wait for the current run to finish before opening resources", "warning");
+              ctx.ui.notify("Дождитесь завершения текущего запуска, чтобы открыть ресурсы.", "warning");
               return;
             }
             if (button === "mcp") {
@@ -718,7 +724,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
             void loadResourceEntries(pi, ctx.cwd, mcpResources, ctx.isProjectTrusted(), button)
               .then((rows) => {
                 if (!rows || rows.length === 0) {
-                  ctx.ui.notify("No resources of this kind loaded", "info");
+                  ctx.ui.notify("Ресурсы этого типа не найдены.", "info");
                   return;
                 }
                 if (button === "agents" && rows.length === 1) {
@@ -729,14 +735,12 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
               })
               .catch((error) => {
                 const message = error instanceof Error ? error.message : String(error);
-                ctx.ui.notify(`Failed to load resources: ${message}`, "error");
+                ctx.ui.notify(`Не удалось загрузить ресурсы: ${message}`, "error");
               });
           },
         });
         sidebar = installSidebar(tui, theme, panels);
-        if (!sidebar.mounted) {
-          ctx.ui.setStatus("pi-ui-extension:sidebar", "Right sidebar requires fullscreen mode");
-        }
+        ctx.ui.setStatus("pi-ui-extension:sidebar", undefined);
       },
       () => {
         sidebar?.dispose();

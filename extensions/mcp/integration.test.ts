@@ -42,11 +42,23 @@ test("entry wires early/late MCP status into restored and live usage without dou
   const details = (server: string) => ({ mode: "script", calls: [{ operation: "call", path: `${server}_ping`, ok: true }] });
   const saved = (server: string, id = `saved-${server}`) => ({ type: "message", message: { role: "toolResult", toolCallId: id, toolName: "mcpScript", details: details(server) } });
   const output = () => renderLayoutFrame(tui.layoutRoot, 240, 100, () => {}).lines.join("\n");
+  const expandToolView = () => {
+    const layout = renderLayoutFrame(tui.layoutRoot, 240, 100, () => {});
+    tui.currentLayout = layout;
+    const wrappers = (box: any): any[] => [
+      ...(box.component?.constructor.name === "CollapsiblePanel" ? [box] : []),
+      ...(box.children ?? []).flatMap(wrappers),
+    ];
+    const box = wrappers(layout.root)[2];
+    assert.ok(box, "Tool View collapsible panel is mounted");
+    box.component.toggle();
+  };
   try {
     await piUiExtension(pi);
     status(["early"]);
     branch = [saved("early")];
     await emit("session_start");
+    expandToolView();
     assert.match(output(), /early\s+0\/1/);
     await emit("before_agent_start", { messageType: "user", prompt: "first", systemPromptOptions: {} });
     branch.push({ type: "message", message: { role: "toolResult", toolCallId: "native-1", toolName: "mcp__native_mcp__ping", details: {} } });
@@ -62,7 +74,7 @@ test("entry wires early/late MCP status into restored and live usage without dou
     });
     assert.match(output(), /native_mcp\s+0\/1/);
     await commands.get("sessions-manager").handler("", ctx);
-    assert.match(notices.join("\n"), /Wait for the current run to finish/);
+    assert.match(notices.join("\n"), /Дождитесь завершения текущего запуска/);
     await emit("before_agent_start", { messageType: "user", prompt: "next", systemPromptOptions: {} });
     assert.match(output(), /native_mcp\s+0\/1/);
     idle = true;
@@ -86,6 +98,7 @@ test("entry wires early/late MCP status into restored and live usage without dou
     // A new session cannot inherit the previous session's adapter state.
     await emit("session_start", { reason: "reload" });
     assert.doesNotMatch(output(), /early\s+0\/1/);
+    expandToolView();
     status(["early"]);
     assert.match(output(), /early\s+0\/1/);
   } finally {

@@ -57,8 +57,9 @@ test("clicking the Sessions title refreshes the saved session list", async () =>
   panel.refresh();
   await flushAsync();
   assert.match(panel.render(40).join("\n"), /Old session/);
-  assert.match(panel.render(40).join("\n"), /1 · now/, "Sessions rows show user questions only");
-  assert.match(panel.render(40)[0]!, /SESSIONS ↻/);
+  assert.match(panel.render(40).join("\n"), /сейчас/, "Sessions rows retain relative time");
+  assert.doesNotMatch(panel.render(40).join("\n"), /1 · сейчас/, "Sessions rows omit the user-question count");
+  assert.match(panel.render(40)[0]!, /СЕССИИ ↻/);
 
   assert.deepEqual(listener?.("\u001b[<0;20;6M"), { consume: true });
   assert.deepEqual(listener?.("\u001b[<0;20;6m"), { consume: true });
@@ -104,8 +105,8 @@ test("renders and opens the MCP resource button", async () => {
 
   panel.refresh();
   await flushAsync();
-  assert.match(panel.render(40).join("\n"), /AGENTS/, "resource button should display AGENTS");
-  assert.doesNotMatch(panel.render(40).join("\n"), /AGENTS\.md/, "the displayed button must be shortened only");
+  assert.match(panel.render(40).join("\n"), /Правила/, "resource button should display a Russian label");
+  assert.doesNotMatch(panel.render(40).join("\n"), /AGENTS\.md/, "the resource button should not display the file name");
   assert.match(panel.render(40).join("\n"), /MCP/);
 
   assert.deepEqual(listener?.("\u001b[<0;43;9M"), { consume: true });
@@ -118,15 +119,15 @@ test("renders and opens the MCP resource button", async () => {
 
 test("resource button clicks match every rendered cell at uneven and narrow widths", async () => {
   const cases = [
-    { width: 26, segments: ["AGENTS", "Skills", "Exten", " MCP "] },
-    { width: 25, segments: ["AGENTS", "Skill", "Exten", " MCP "] },
-    { width: 27, segments: ["AGENTS", "Skills", "Extens", " MCP "] },
-    { width: 24, segments: ["AGENT", "Skill", "Exten", " MCP "] },
-    { width: 28, segments: ["AGENTS", "Skills", "Extens", " MCP  "] },
-    { width: 7, segments: ["A", "S", "E", ""] },
-    { width: 8, segments: ["A", "S", "E", "M"] },
-    { width: 26, desiredWidth: 40, segments: ["AGENTS", "Skills", "Exten", " MCP "] },
-    { width: 40, desiredWidth: 26, segments: ["AGENTS", "Skills", "Exten", " MCP "] },
+    { width: 26, segments: ["Правил", "Навыки", "Плаги", " MCP "] },
+    { width: 25, segments: ["Правил", "Навык", "Плаги", " MCP "] },
+    { width: 27, segments: ["Правил", "Навыки", "Плагин", " MCP "] },
+    { width: 24, segments: ["Прави", "Навык", "Плаги", " MCP "] },
+    { width: 28, segments: ["Правил", "Навыки", "Плагин", " MCP  "] },
+    { width: 7, segments: ["П", "Н", "П", ""] },
+    { width: 8, segments: ["П", "Н", "П", "M"] },
+    { width: 26, desiredWidth: 40, segments: ["Правил", "Навыки", "Плаги", " MCP "] },
+    { width: 40, desiredWidth: 26, segments: ["Правил", "Навыки", "Плаги", " MCP "] },
   ];
   const ids = ["agents", "skills", "extensions", "mcp"];
   for (const { width, desiredWidth = width, segments } of cases) {
@@ -333,7 +334,7 @@ test("opens advanced manager from ≡ without triggering refresh or bulk trash",
   panel.dispose();
 });
 
-test("pinned session remains visible ahead of the five-item sidebar limit", async () => {
+test("pinned and recent sessions remain visible in the expanded sidebar list", async () => {
   const tui = { addInputListener: () => () => {}, requestRender() {} } as any;
   const panel = new SessionPanel(theme, {
     tui, getDesiredWidth: () => 42,
@@ -349,7 +350,8 @@ test("pinned session remains visible ahead of the five-item sidebar limit", asyn
   const output = panel.render(42).join("\n");
   assert.match(output, /○ ★Important/);
   assert.match(output, /Recent 3/);
-  assert.doesNotMatch(output, /Recent 4/);
+  assert.match(output, /Recent 4/);
+  assert.match(output, /Recent 14/);
   panel.dispose();
 });
 
@@ -383,7 +385,7 @@ test("session row ☆/★ toggles pin in place without invoking rename, delete o
     },
   };
   const click = (text: string) => {
-    const row = panel.render(40)[1]!;
+    const row = stripTerminalSequences(panel.render(40)[1]!);
     const column = row.lastIndexOf(text);
     assert.ok(column > 0, `missing button ${text}: ${row}`);
     const x = 10 + column + 1;
@@ -555,9 +557,9 @@ test("a failed first load shows a retry hint instead of No saved sessions", asyn
 
   const output = panel.render(40).join("\n");
   assert.doesNotMatch(output, /No saved sessions/);
-  assert.match(output, /刷新失败，点标题重试：offline/);
-  assert.match(panel.render(40)[0]!, /SESSIONS ⚠/);
-  assert.match(panel.render(40)[0]!, /SESSIONS ⚠/, "the header flags the failure on the retry target itself");
+  assert.match(output, /Ошибка: offline/);
+  assert.match(panel.render(40)[0]!, /СЕССИИ ⚠/);
+  assert.match(panel.render(40)[0]!, /СЕССИИ ⚠/, "the header flags the failure on the retry target itself");
 
   press(20, 6);
   await flushAsync();
@@ -567,8 +569,8 @@ test("a failed first load shows a retry hint instead of No saved sessions", asyn
 
   const recovered = panel.render(40).join("\n");
   assert.match(recovered, /One session/);
-  assert.doesNotMatch(recovered, /刷新失败/);
-  assert.match(panel.render(40)[0]!, /SESSIONS ↻/);
+  assert.doesNotMatch(recovered, /Ошибка:/);
+  assert.match(panel.render(40)[0]!, /СЕССИИ ↻/);
   panel.dispose();
 });
 
@@ -587,10 +589,10 @@ test("a failed refresh keeps the last good list and the hint fits a narrow panel
   const output = lines.join("\n");
   assert.match(output, /First session/);
   assert.match(output, /Second session/);
-  assert.match(output, /刷新失败，点标题重试/);
-  assert.doesNotMatch(output, /No saved sessions/);
+  assert.match(output, /Ошибка: permission denied/);
+  assert.doesNotMatch(output, /Нет сохранённых сессий/);
   assert.ok(lines.every((line) => visibleWidth(line) <= 44), "failure hint stays inside the panel width");
-  assert.match(stripTerminalSequences(lines[3]!), /⚠ 刷新失败，点标题重试：permission/, "the long reason is truncated, not wrapped");
+  assert.match(stripTerminalSequences(lines[3]!), /⚠ Ошибка: permission/, "the long reason is truncated, not wrapped");
   panel.dispose();
 });
 
@@ -601,7 +603,7 @@ test("a refresh requested during an in-flight load runs once, and dispose stops 
   panel.refresh();
   panel.refresh();
   assert.equal(loader.loads(), 1, "a second click is queued, not started");
-  assert.match(panel.render(40)[0]!, /SESSIONS …/);
+  assert.match(panel.render(40)[0]!, /СЕССИИ …/);
 
   loader.settle(0, [session("old", "Old session")]);
   await flushAsync();
@@ -641,11 +643,11 @@ test("after a failed refresh the error hint row triggers no session action, and 
     onOpenResources(button) { opened = button; },
     now: () => 0,
   });
-  // Title(1) + four drawn rows + hint + divider + buttons + bottom = 9 lines.
+  // Title(1) + all five rows + hint + divider + buttons + bottom = 10 lines.
   tui.currentLayout = {
     root: {
-      component: panel, rect: { x: 10, y: 5, width: 40, height: 9 },
-      clip: { x: 10, y: 5, width: 40, height: 9 }, children: [],
+      component: panel, rect: { x: 10, y: 5, width: 40, height: 10 },
+      clip: { x: 10, y: 5, width: 40, height: 10 }, children: [],
     },
   };
   const press = (x: number, y: number) => {
@@ -663,12 +665,12 @@ test("after a failed refresh the error hint row triggers no session action, and 
   await flushAsync();
 
   const lines = panel.render(40);
-  assert.match(stripTerminalSequences(lines[4]!), /Row 3/, "only four rows fit beside the hint");
-  assert.match(stripTerminalSequences(lines[5]!), /刷新失败，点标题重试：boom/);
+  assert.match(stripTerminalSequences(lines[5]!), /Row 4/, "all five rows remain visible beside the hint");
+  assert.match(stripTerminalSequences(lines[6]!), /Ошибка: boom/);
 
-  // The hint sits on the row the hidden fifth session used to occupy.
+  // The hint follows every retained session and must never trigger a row action.
   // Content columns start at rect.x + 2, and SGR x is one-based.
-  for (const column of [0, 31, 32, 34, 35]) press(13 + column, 11);
+  for (const column of [0, 31, 32, 34, 35]) press(13 + column, 12);
   await flushAsync();
   assert.deepEqual(calls, [], "the error hint row never selects, pins, renames or deletes");
 
@@ -676,7 +678,7 @@ test("after a failed refresh the error hint row triggers no session action, and 
   await flushAsync();
   assert.deepEqual(calls, ["select:row-0"], "a drawn row is still clickable");
 
-  press(44, 13);
+  press(44, 14);
   await flushAsync();
   assert.equal(opened, "mcp", "resource buttons keep working next to the hint");
   panel.dispose();
@@ -692,8 +694,8 @@ test("a blank failure message still shows the retry hint instead of No saved ses
 
   const output = panel.render(40).join("\n");
   assert.doesNotMatch(output, /No saved sessions/);
-  assert.match(output, /刷新失败，点标题重试：Unknown/);
-  assert.match(panel.render(40)[0]!, /SESSIONS ⚠/);
+  assert.match(output, /Ошибка: Unknown/);
+  assert.match(panel.render(40)[0]!, /СЕССИИ ⚠/);
 
   press(20, 6);
   await flushAsync();
@@ -701,7 +703,7 @@ test("a blank failure message still shows the retry hint instead of No saved ses
   await flushAsync();
   const recovered = panel.render(40).join("\n");
   assert.match(recovered, /One session/);
-  assert.doesNotMatch(recovered, /刷新失败/);
+  assert.doesNotMatch(recovered, /Ошибка:/);
   panel.dispose();
 });
 
@@ -716,7 +718,7 @@ test("a synchronously throwing load reports the failure and the title click retr
   await flushAsync();
 
   const output = panel.render(40).join("\n");
-  assert.match(output, /刷新失败，点标题重试：sync boom/);
+  assert.match(output, /Ошибка: sync boom/);
   assert.doesNotMatch(output, /No saved sessions/);
   assert.doesNotMatch(output, /Loading sessions/, "a synchronous throw never leaves the panel loading forever");
 

@@ -141,11 +141,11 @@ export function renderThinkingHeader(options: ThinkingHeaderOptions): string {
   let header: string;
   if (status.phase === "streaming") {
     const frame = colors.indicator(thinkingIndicatorFrame(options.now ?? Date.now()));
-    header = `${frame} ${colors.label(colors.bold("Thinking"))}`;
+    header = `${frame} ${colors.label(colors.bold("Думает"))}`;
   } else {
     const glyph = options.disclosure ? `${options.expanded ? EXPANDED_GLYPH : COLLAPSED_GLYPH} ` : "";
     const duration = formatThinkingDuration(status.duration);
-    const label = `${glyph}Thought${duration ? ` · ${duration}` : ""}`;
+    const label = `${glyph}Размышление${duration ? ` · ${duration}` : ""}`;
     header = colors.accent(colors.bold(label));
   }
   if (options.width === undefined) return header;

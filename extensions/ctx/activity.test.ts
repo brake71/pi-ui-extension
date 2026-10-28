@@ -67,7 +67,7 @@ test("aborted run keeps completed tools but marks interrupted tools as cancelled
     getModel: () => "model",
     getThinkingLevel: () => "off",
   });
-  assert.match(panel.render(55).join("\n"), /aborted/);
+  assert.match(panel.render(55).join("\n"), /прервано/);
 
   tracker.startRun(2_000);
   assert.equal(tracker.getSnapshot().aborted, undefined);

@@ -44,9 +44,9 @@ function findLayoutBox(box: LayoutBox, component: Component): LayoutBox | undefi
 
 function modeLabel(mode: ToolViewMode): string {
   switch (mode) {
-    case "normal": return "Normal";
-    case "compact": return "Compact";
-    case "hidden": return "Hidden";
+    case "normal": return "Полный";
+    case "compact": return "Краткий";
+    case "hidden": return "Скрытый";
   }
 }
 
@@ -79,9 +79,9 @@ function usageCount(theme: Theme, exchange: number, session: number): string {
 }
 
 function sectionLabel(kind: "direct" | "nested" | "mcp", count: number, width: number): string {
-  const full = kind === "mcp" ? "MCP" : kind === "direct" ? "DIRECT TOOLS" : "NESTED TOOLS";
-  const short = kind === "mcp" ? "MCP" : kind === "direct" ? "DIRECT" : "NESTED";
-  const base = width >= 32 ? full : width >= 18 ? short : kind === "direct" ? "DIR" : kind === "nested" ? "NEST" : "MCP";
+  const full = kind === "mcp" ? "MCP" : kind === "direct" ? "ВЫЗОВЫ" : "ВЛОЖЕННЫЕ";
+  const short = kind === "mcp" ? "MCP" : kind === "direct" ? "ВЫЗОВЫ" : "ВЛОЖ.";
+  const base = width >= 32 ? full : width >= 18 ? short : kind === "direct" ? "ВЫЗ." : kind === "nested" ? "ВЛОЖ." : "MCP";
   return width >= 15 ? `${base} · ${count}` : base;
 }
 
@@ -224,7 +224,7 @@ export class ToolViewPanel implements Component {
     const nested = grouped.tool.filter((count) => count.scope === "nested");
     const all = sectionTotal(grouped.tool); // MCP rows attribute existing calls, not extra executions.
     const usageRows: string[] = [
-      alignedRow(this.theme, colored(this.theme, "dim", "RUN"), colored(this.theme, "dim", "TOTAL"), contentWidth),
+      alignedRow(this.theme, colored(this.theme, "dim", "СЕЙЧАС"), colored(this.theme, "dim", "ВСЕГО"), contentWidth),
       alignedRow(
         this.theme,
         colored(this.theme, all.run > 0 ? "success" : "muted", String(all.run)),
@@ -258,7 +258,7 @@ export class ToolViewPanel implements Component {
     appendGroup("mcp", grouped.mcp);
 
     const lines = [
-      panelTop(this.theme, "VIEW", renderWidth),
+      panelTop(this.theme, "ОТОБРАЖЕНИЕ", renderWidth),
       panelContent(this.theme, body, "dim", contentWidth),
       flushSeparator(this.theme, renderWidth),
       ...usageRows,

@@ -180,14 +180,14 @@ export function buildMcpStatusSnapshot(
 }
 
 export function describeMcpStatus(server: McpServerStatus): string {
-  const state = !server.enabled ? "Disabled"
-    : server.connection === "connected" ? "Connected (adapter reported)"
-      : server.connection === "connecting" ? "Connecting (adapter reported)"
-        : server.connection === "disconnected" ? "Disconnected (adapter reported)"
-          : server.connection === "needs-auth" ? "Sign-in required (adapter reported)"
-            : server.connection === "failed" ? "Failed (adapter reported)"
-              : server.loaded ? "Loaded (connection unverified)"
-                : server.source === "extension" ? "Registered (connection unverified)"
-                  : "Configured (connection unverified)";
+  const state = !server.enabled ? "Отключено"
+    : server.connection === "connected" ? "Подключено (статус адаптера)"
+      : server.connection === "connecting" ? "Подключение (статус адаптера)"
+        : server.connection === "disconnected" ? "Отключено (статус адаптера)"
+          : server.connection === "needs-auth" ? "Требуется вход (статус адаптера)"
+            : server.connection === "failed" ? "Ошибка (статус адаптера)"
+              : server.loaded ? "Загружено (соединение не проверено)"
+                : server.source === "extension" ? "Зарегистрировано (соединение не проверено)"
+                  : "Настроено (соединение не проверено)";
   return `${state} · ${server.source}`;
 }

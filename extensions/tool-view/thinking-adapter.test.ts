@@ -106,7 +106,7 @@ function harness(t: TestContext, providedStatus?: StatusFn, toolGap?: (toolName:
   return { state, status, transformer, installed, make, setMode, prototype, initial };
 }
 
-test("Compact Thinking streams a live title, expands to the full body, and settles on Thought", (t) => {
+test("Compact Thinking streams a live title, expands to the full body, and settles on Размышление", (t) => {
   assert.equal(typeof AssistantMessageComponent.prototype.setHiddenThinkingLabel, "function",
     `Pi ${VERSION} must keep the Thinking component shape this adapter decorates`);
   const { state, make, installed } = harness(t);
@@ -118,13 +118,13 @@ test("Compact Thinking streams a live title, expands to the full body, and settl
   const live = lines(component);
   assert.equal(live.length, 2, "a spacer plus the single title row");
   assert.match(live.join("\n"), INDICATOR);
-  assert.match(live[1]!, /Thinking$/);
+  assert.match(live[1]!, /Думает$/);
   assert.doesNotMatch(live.join("\n"), /plugin version/, "a collapsed live run hides its body");
 
-  const toggled = clickLine(component, /Thinking$/);
+  const toggled = clickLine(component, /Думает$/);
   assert.equal(toggled?.handled, true);
   const expanded = lines(component);
-  assert.match(expanded[1]!, /Thinking$/, "the live title keeps its indicator when expanded");
+  assert.match(expanded[1]!, /Думает$/, "the live title keeps its indicator when expanded");
   const body = expanded.slice(2);
   assert.ok(body.length > 1);
   assert.match(body[0]!, BAR_ROW, "the body starts on the row right below the title");
@@ -155,13 +155,13 @@ test("Compact Thinking streams a live title, expands to the full body, and settl
     content: [{ type: "thinking", thinking: `${first}\n\n${second}` }],
   } as any, true);
   const settled = lines(component);
-  assert.equal(settled[1]!.trim(), "− Thought · 1.3s", "an expanded completed run shows the minus disclosure");
+  assert.equal(settled[1]!.trim(), "− Размышление · 1.3s", "an expanded completed run shows the minus disclosure");
   assert.match(settled.join(" "), /plugin version/, "completion keeps the block expanded");
 
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   const collapsed = lines(component);
   assert.equal(collapsed.length, 2);
-  assert.equal(collapsed[1]!.trim(), "+ Thought · 1.3s");
+  assert.equal(collapsed[1]!.trim(), "+ Размышление · 1.3s");
   assert.doesNotMatch(collapsed.join("\n"), /plugin version/);
 });
 
@@ -171,23 +171,23 @@ test("only the Thinking title toggles it; body clicks, wheel, and other buttons 
     { type: "thinking", thinking: "Private reasoning about the next step." },
     { type: "text", text: "Public answer" },
   ], false);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   assert.match(plain(component), /Private reasoning/);
 
   const bodyLine = lineIndex(component, /Private reasoning/);
   component.handleMouse?.(mouse(bodyLine, 2));
   assert.match(plain(component), /Private reasoning/, "a body click must not collapse the block");
 
-  clickLine(component, /Thought/, { type: "wheel", button: "none", wheelDelta: 3 });
+  clickLine(component, /Размышление/, { type: "wheel", button: "none", wheelDelta: 3 });
   assert.match(plain(component), /Private reasoning/, "the wheel must not toggle");
 
-  clickLine(component, /Thought/, { button: "right" });
+  clickLine(component, /Размышление/, { button: "right" });
   assert.match(plain(component), /Private reasoning/, "other buttons must not toggle");
 
   clickLine(component, /Public answer/);
   assert.match(plain(component), /Private reasoning/, "the surrounding message text must not toggle");
 
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   assert.doesNotMatch(plain(component), /Private reasoning/);
 });
 
@@ -199,12 +199,12 @@ test("Hidden keeps the title and measured time without ever leaking the body", (
     { type: "thinking", thinking: "PRIVATE_THINKING_BODY" },
     { type: "text", text: "Public answer" },
   ], false);
-  assert.equal(lines(component)[1]!.trim(), "Thought · 1.3s", "Hidden has no disclosure glyph");
+  assert.equal(lines(component)[1]!.trim(), "Размышление · 1.3s", "Hidden has no disclosure glyph");
   assert.doesNotMatch(plain(component), /PRIVATE_THINKING_BODY/);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   assert.doesNotMatch(plain(component), /PRIVATE_THINKING_BODY|Thinking\.\.\./,
     "a Hidden click must not reveal the body or Pi's fallback label");
-  assert.equal(lines(component)[1]!.trim(), "Thought · 1.3s");
+  assert.equal(lines(component)[1]!.trim(), "Размышление · 1.3s");
 });
 
 test("Normal keeps Pi's full Thinking body and native click behavior", (t) => {
@@ -223,7 +223,7 @@ test("Pi's own hideThinkingBlock keeps its native read-only label", (t) => {
   const { make } = harness(t);
   const component = make([{ type: "thinking", thinking: "HIDDEN_BY_PI_BODY" }], false, { hideThinking: true });
   assert.match(plain(component), /Thinking\.\.\./);
-  assert.doesNotMatch(plain(component), /HIDDEN_BY_PI_BODY|Thought/);
+  assert.doesNotMatch(plain(component), /HIDDEN_BY_PI_BODY|Размышление/);
   clickLine(component, /Thinking\.\.\./);
   assert.doesNotMatch(plain(component), /HIDDEN_BY_PI_BODY/, "the native override must not expose raw Thinking");
 });
@@ -236,30 +236,30 @@ test("expansion is independent per message instance and per Thinking run", (t) =
     { type: "thinking", thinking: "SECOND_RUN_BODY" },
   ];
   const component = make(content, false);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   assert.match(plain(component), /FIRST_RUN_BODY/);
   assert.doesNotMatch(plain(component), /SECOND_RUN_BODY/, "a sibling run stays collapsed");
-  clickLine(component, /Thought/, {}, 1, true);
+  clickLine(component, /Размышление/, {}, 1, true);
   const both = plain(component);
   assert.match(both, /FIRST_RUN_BODY/);
   assert.match(both, /SECOND_RUN_BODY/, "the second run toggles on its own title");
 
   const sibling = make(content, false);
   assert.doesNotMatch(plain(sibling), /FIRST_RUN_BODY|SECOND_RUN_BODY/, "another instance starts collapsed");
-  assert.equal(lines(component).filter((line) => line.includes("− Thought")).length, 2);
+  assert.equal(lines(component).filter((line) => line.includes("− Размышление")).length, 2);
 });
 
 test("resize and invalidate keep the expansion of an open Thinking block", (t) => {
   const { make } = harness(t);
   const component = make([{ type: "thinking", thinking: "RESIZE_BODY_TEXT that is long enough to wrap at a narrow width" }], false);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   const wide = lines(component, 72);
   const narrow = lines(component, 24);
   assert.ok(narrow.every((line) => visibleWidth(line) <= 24));
   assert.ok(narrow.filter((line) => BAR_ROW.test(line)).length > wide.filter((line) => BAR_ROW.test(line)).length);
   component.invalidate();
   assert.match(plain(component, 72), /RESIZE_BODY_TEXT/, "invalidate rebuilds children without collapsing");
-  assert.equal(lines(component, 72).filter((line) => line.includes("− Thought")).length, 1);
+  assert.equal(lines(component, 72).filter((line) => line.includes("− Размышление")).length, 1);
 });
 
 test("reinstalling the adapter never stacks and other components keep native clicks", (t) => {
@@ -268,7 +268,7 @@ test("reinstalling the adapter never stacks and other components keep native cli
   assert.equal(prototype[ADAPTER_KEY].original, initial, "reinstall must not stack prototype wrappers");
 
   const component = make([{ type: "thinking", thinking: "OWNED_BODY" }], false);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   assert.match(plain(component), /OWNED_BODY/);
 
   const foreign = make(
@@ -276,8 +276,8 @@ test("reinstalling the adapter never stacks and other components keep native cli
     false,
     { transformers: [(text, context) => transformThinkingText(text, context, "compact", () => ({ phase: "complete" }))] },
   );
-  assert.match(plain(foreign), /\+ Thought/, "the fallback title still applies");
-  clickLine(foreign, /Thought/);
+  assert.match(plain(foreign), /\+ Размышление/, "the fallback title still applies");
+  clickLine(foreign, /Размышление/);
   assert.match(plain(foreign), /Thinking\.\.\./, "a different transformer keeps Pi's native click");
 
   const bare = make([{ type: "thinking", thinking: "NATIVE_BODY" }], false, { transformers: [] });
@@ -293,10 +293,10 @@ test("decorating never mutates the assistant message", (t) => {
   ];
   const snapshot = structuredClone(content);
   const component = make(content, true);
-  clickLine(component, /Thinking$/);
+  clickLine(component, /Думает$/);
   state.status = { phase: "complete", duration: { ms: 2400, approximate: false } };
   component.updateContent({ role: "assistant", stopReason: "stop", content } as any, false);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   assert.deepEqual(content, snapshot);
 });
 
@@ -304,7 +304,7 @@ test("narrow terminals wrap CJK and emoji Thinking text inside one bar", (t) => 
   const { make } = harness(t);
   const body = "用户想知道 pi-ui-extension 的最新版本，并核对 package.json 的版本号 🚀 与发布说明。".repeat(2);
   const component = make([{ type: "thinking", thinking: body }], false);
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   const narrow = lines(component, 20);
   assert.ok(narrow.every((line) => visibleWidth(line) <= 20), "no row may overflow the terminal");
   const rows = narrow.filter((line) => BAR_ROW.test(line));
@@ -323,7 +323,7 @@ test("thinking_end settles the title before the assistant message ends", (t) => 
   timing.observe({ type: "thinking_end", contentIndex: 0, partial: { role: "assistant", content: done } } as any);
   const { make } = harness(t, (text, streaming) => timing.status(text, streaming));
   const component = make(done, true);
-  assert.equal(lines(component)[1]!.trim(), "+ Thought · 1.3s",
+  assert.equal(lines(component)[1]!.trim(), "+ Размышление · 1.3s",
     "the run is complete while the assistant message still streams");
 });
 
@@ -334,17 +334,17 @@ test("a Thinking run that has only emitted thinking_start still shows a live tit
   const pending = lines(component);
   assert.equal(pending.length, 1, "Pi skips the empty block, so the adapter adds the live title");
   assert.match(pending[0]!, INDICATOR);
-  assert.match(pending[0]!, /Thinking$/);
+  assert.match(pending[0]!, /Думает$/);
 
   state.status = { phase: "complete" };
   component.updateContent({
     role: "assistant", stopReason: "stop", content: [{ type: "thinking", thinking: "now it has text" }],
   } as any, false);
-  assert.equal(lines(component).filter((line) => /Thinking|Thought/.test(line)).length, 1,
+  assert.equal(lines(component).filter((line) => /Thinking|Размышление/.test(line)).length, 1,
     "the placeholder is replaced by the real run");
 
   const idle = make(empty, false);
-  assert.doesNotMatch(plain(idle), /Thinking|Thought/, "an idle empty block shows nothing");
+  assert.doesNotMatch(plain(idle), /Thinking|Размышление/, "an idle empty block shows nothing");
 });
 
 test("Pi's hide switch and adjacent runs leave exactly one Thinking title", (t) => {
@@ -356,17 +356,17 @@ test("Pi's hide switch and adjacent runs leave exactly one Thinking title", (t) 
 
   const adjacent = make([{ type: "thinking", thinking: "first" }, { type: "thinking", thinking: "" }], true);
   assert.equal(
-    lines(adjacent).filter((line) => /Thinking|Thought/.test(line)).length,
+    lines(adjacent).filter((line) => /Thinking|Размышление|Думает/.test(line)).length,
     1,
     "an empty block inside a rendered run must not add a second title",
   );
 
   const onlyEmpty = make([{ type: "thinking", thinking: "" }, { type: "text", text: "answer" }, ...empty], true);
-  assert.equal(lines(onlyEmpty).filter((line) => /Thinking|Thought/.test(line)).length, 1,
+  assert.equal(lines(onlyEmpty).filter((line) => /Thinking|Размышление|Думает/.test(line)).length, 1,
     "a trailing empty run shows one live title next to the answer");
 
   const movedOn = make([{ type: "thinking", thinking: "" }, { type: "text", text: "answer" }], true);
-  assert.doesNotMatch(plain(movedOn), /Thinking|Thought/, "a run that already moved on to text leaves no title");
+  assert.doesNotMatch(plain(movedOn), /Thinking|Размышление/, "a run that already moved on to text leaves no title");
 });
 
 test("an empty Thinking title opens on click and stays open when text arrives", (t) => {
@@ -401,7 +401,7 @@ test("Thinking titles, the quote bar and the reply share Pi's output padding", (
       { type: "text", text: "Public reply" },
     ], false, { outputPad: pad });
     const rows = lines(component);
-    const title = rows.find((line) => line.includes("Thought"))!;
+    const title = rows.find((line) => line.includes("Размышление"))!;
     const reply = rows.find((line) => line.includes("Public reply"))!;
     assert.equal(title.indexOf("+"), pad, `the title starts at Pi's padding (${pad})`);
     assert.equal(reply.indexOf("Public reply"), pad, "the reply starts at the same column");
@@ -472,13 +472,13 @@ test("an expanded Thinking body is followed by exactly one blank row before the 
   chat.addChild(ownedTool("bash", "2"));
 
   const collapsed = chat.render(WIDTH).map(stripTerminalSequences);
-  assert.match(collapsed[1]!, /\+ Thought/);
+  assert.match(collapsed[1]!, /\+ Размышление/);
   assert.match(collapsed[2]!, /›  codemode/,
     "a collapsed block keeps Pi's compact tool spacing with no extra row");
 
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   const rows = chat.render(WIDTH).map(stripTerminalSequences);
-  const title = rows.findIndex((line) => line.includes("− Thought"));
+  const title = rows.findIndex((line) => line.includes("− Размышление"));
   assert.ok(title >= 0, "the block expands");
   const lastBody = lastIndex(rows, BAR_ROW);
   assert.ok(lastBody > title);
@@ -506,7 +506,7 @@ test("a third-party tool keeps its native leading blank row and gains no second 
   chat.addChild(thirdPartyTool("mcp__server__search", "1"));
   chat.addChild(ownedTool("codemode", "2"));
 
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   const rows = chat.render(WIDTH).map(stripTerminalSequences);
   const lastBody = lastIndex(rows, BAR_ROW);
   assert.ok(lastBody > 0);
@@ -529,7 +529,7 @@ test("without a trimmed tool gap the Thinking body adds no row over the tool's o
   assert.equal(tool.render(WIDTH)[0], "", "Pi's native leading blank row is still there");
   chat.addChild(tool);
 
-  clickLine(component, /Thought/);
+  clickLine(component, /Размышление/);
   const rows = chat.render(WIDTH).map(stripTerminalSequences);
   const lastBody = lastIndex(rows, BAR_ROW);
   assert.equal(rows[lastBody + 1], "", "the tool's own blank row is the gap");
@@ -545,19 +545,19 @@ test("the Thinking gap never doubles Pi's own spacing before text or an error", 
     { type: "text", text: "Public answer" },
     { type: "thinking", thinking: "Second body." },
   ], false);
-  clickLine(component, /Thought/);
-  clickLine(component, /Thought/, {}, 1, true);
+  clickLine(component, /Размышление/);
+  clickLine(component, /Размышление/, {}, 1, true);
   const rows = lines(component);
   const answer = rows.findIndex((line) => line.includes("Public answer"));
   assert.equal(rows[answer - 1], "", "Pi's native spacer is the only gap before the reply");
   assert.match(rows[answer - 2]!, BAR_ROW);
-  const secondTitle = lastIndex(rows, "− Thought");
+  const secondTitle = lastIndex(rows, "− Размышление");
   assert.match(rows[secondTitle - 1]!, /Public answer/,
     "Pi's own layout between the reply and the next block is untouched");
   assert.match(rows.at(-1)!, BAR_ROW, "a body with nothing after it adds no trailing gap");
 
   const failed = make([{ type: "thinking", thinking: "Body text." }], false);
-  clickLine(failed, /Thought/);
+  clickLine(failed, /Размышление/);
   failed.updateContent({
     role: "assistant", stopReason: "error", errorMessage: "boom",
     content: [{ type: "thinking", thinking: "Body text." }],
@@ -569,7 +569,7 @@ test("the Thinking gap never doubles Pi's own spacing before text or an error", 
   assert.equal(errorRows[errorBody + 1], "");
 
   const truncated = make([{ type: "thinking", thinking: "Body text." }], false);
-  clickLine(truncated, /Thought/);
+  clickLine(truncated, /Размышление/);
   truncated.updateContent({
     role: "assistant", stopReason: "length",
     content: [{ type: "thinking", thinking: "Body text." }],
@@ -596,7 +596,7 @@ test("widths 1 to 20 clip CJK, emoji, paragraphs and code without overflow", (t)
   ].join("\n");
   for (const pad of [0, 1, 3]) {
     const component = make([{ type: "thinking", thinking: body }], false, { outputPad: pad });
-    component.handleMouse?.(mouse(lineIndex(component, /Thought/), Math.min(pad, 3)));
+    component.handleMouse?.(mouse(lineIndex(component, /Размышление/), Math.min(pad, 3)));
     for (let width = 1; width <= 20; width++) {
       for (const line of lines(component, width)) {
         assert.ok(visibleWidth(line) <= width, `pad ${pad} width ${width} overflowed: ${JSON.stringify(line)}`);

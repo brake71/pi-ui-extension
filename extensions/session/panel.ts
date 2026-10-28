@@ -10,16 +10,17 @@ import {
 import { panelBottom, panelContent } from "../sidebar/panel.ts";
 import { installPriorityInputListener, isSidebarInputBlocked, parseSgrMouseEvent } from "../sidebar/resize.ts";
 
-const MAX_VISIBLE_SESSIONS = 5;
 const SESSION_ACTION_WIDTH = 4;
 const SESSION_PIN_ACTION_WIDTH = 2;
 const MIN_SUMMARY_WIDTH_WITH_PIN = 12;
-const SESSION_TITLE_CELLS = " SESSIONS ↻ ".length;
+const SESSION_TITLE_CELLS = " СЕССИИ ↻ ".length;
 const CLEAR_OTHERS_CELL = " ⊗ ";
 const MANAGE_SESSIONS_CELL = " ≡ ";
 
 export type SessionListItem = {
   readonly id: string;
+  readonly parentId?: string;
+  readonly isSubagent?: boolean;
   readonly title: string;
   readonly modified: Date;
   /** Top-level user messages (questions), not assistant/tool results. */
@@ -45,9 +46,9 @@ export type SessionPanelOptions = {
 };
 
 const RESOURCE_BUTTONS: ReadonlyArray<{ id: ResourceButtonId; label: string }> = [
-  { id: "agents", label: "AGENTS" },
-  { id: "skills", label: "Skills" },
-  { id: "extensions", label: "Extensions" },
+  { id: "agents", label: "Правила" },
+  { id: "skills", label: "Навыки" },
+  { id: "extensions", label: "Плагины" },
   { id: "mcp", label: "MCP" },
 ];
 
@@ -97,12 +98,12 @@ function normalizeTitle(title: string): string {
 function formatRelativeTime(modified: Date, now: number): string {
   const elapsedMs = Math.max(0, now - modified.getTime());
   const minutes = Math.floor(elapsedMs / 60_000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return "сейчас";
+  if (minutes < 60) return `${minutes}м`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return `${hours}ч`;
   const days = Math.floor(hours / 24);
-  return days < 30 ? `${days}d` : `${Math.floor(days / 30)}mo`;
+  return days < 30 ? `${days}д` : `${Math.floor(days / 30)}мес`;
 }
 
 function padToWidth(text: string, width: number): string {
@@ -145,16 +146,17 @@ function renderSessionTitleRow(theme: Theme, title: string, renderWidth: number,
 }
 
 function formatSessionSummary(session: SessionListItem, width: number, now: number): string {
+  // When the sidebar is narrow, title readability wins over secondary metadata.
   const marker = `${session.current ? "● " : "○ "}${session.pinned ? "★" : ""}`;
-  const metadata = `${session.userPromptCount ?? "?"} · ${formatRelativeTime(session.modified, now)}`;
-  const fixedWidth = visibleWidth(marker) + visibleWidth(metadata) + 1;
-  if (fixedWidth >= width) {
-    return truncateToWidth(`${marker}${normalizeTitle(session.title)}`, width, "");
-  }
-
-  const titleWidth = width - fixedWidth;
+  const metadata = formatRelativeTime(session.modified, now);
+  const metadataWidth = visibleWidth(metadata) + 1;
+  const showMetadata = width - visibleWidth(marker) - metadataWidth >= 14;
+  const fixedWidth = visibleWidth(marker) + (showMetadata ? metadataWidth : 0);
+  const titleWidth = Math.max(1, width - fixedWidth);
   const title = truncateToWidth(normalizeTitle(session.title), titleWidth, "…");
-  return `${marker}${padToWidth(title, titleWidth)} ${metadata}`;
+  return showMetadata
+    ? `${marker}${padToWidth(title, titleWidth)} ${metadata}`
+    : `${marker}${title}`;
 }
 
 function showPinButton(contentWidth: number, enabled: boolean): boolean {
@@ -204,9 +206,9 @@ export class SessionPanel implements Component {
     return root ? findLayoutBox(root, this) : undefined;
   }
 
-  /** Rows actually drawn: the failure hint takes one slot, so hit-testing uses the same set. */
+  /** Rows actually drawn; the failure hint follows the rows and is never actionable. */
   private visibleSessions(): readonly SessionListItem[] {
-    return this.error ? this.sessions.slice(0, MAX_VISIBLE_SESSIONS - 1) : this.sessions;
+    return this.sessions;
   }
 
   private sessionAt(box: LayoutBox, x: number, y: number): SessionListItem | undefined {
@@ -217,10 +219,9 @@ export class SessionPanel implements Component {
     return row >= 0 && row < rows.length ? rows[row] : undefined;
   }
 
-  /** Buttons row sits after the session list: title(1) + up to 5 rows + spacing. */
+  /** Buttons row sits after the session list and divider. */
   private resourceButtonAt(box: LayoutBox, x: number, y: number): ResourceButtonId | undefined {
-    // Render rows: title(1) + sessions/listing (1..5 rows) + buttons(1). The
-    // button row is the last content row, i.e. rect.height - 2.
+    // The button row is the last content row, i.e. rect.height - 2.
     if (y - box.rect.y !== Math.max(2, box.rect.height - 2)) return undefined;
     const renderWidth = Math.max(1, Math.min(box.rect.width, this.options.getDesiredWidth()));
     const contentWidth = Math.max(1, renderWidth - 4);
@@ -472,7 +473,7 @@ export class SessionPanel implements Component {
     void loading
       .then((sessions) => {
         if (this.disposed) return;
-        this.sessions = sessions.slice(0, MAX_VISIBLE_SESSIONS);
+        this.sessions = [...sessions];
         this.error = undefined;
         this.loading = false;
       })
@@ -512,13 +513,13 @@ export class SessionPanel implements Component {
         ))
       : this.error ? [] : [panelContent(
           this.theme,
-          this.loading ? "Loading sessions…" : "No saved sessions",
+          this.loading ? "Загружаю…" : "Нет сохранённых сессий",
           "dim",
           contentWidth,
         )];
     // Sits under the retained rows, so row hit-testing keeps its index mapping.
     if (this.error) {
-      body.push(panelContent(this.theme, `⚠ 刷新失败，点标题重试：${this.error}`, "warning", contentWidth));
+      body.push(panelContent(this.theme, `⚠ Ошибка: ${this.error} · повтор ↻`, "warning", contentWidth));
     }
 
     const buttonRow = resourceButtonSpans(contentWidth).map((button) => {
@@ -534,7 +535,7 @@ export class SessionPanel implements Component {
 
     const divider = this.theme.fg("dim", `├${"─".repeat(Math.max(1, renderWidth - 2))}┤`);
     return [
-      renderSessionTitleRow(this.theme, this.loading || this.loadInFlight ? "SESSIONS …" : this.error ? "SESSIONS ⚠" : "SESSIONS ↻", renderWidth, this.clearPressed, this.managePressed, Boolean(this.options.onOpenManager)),
+      renderSessionTitleRow(this.theme, this.loading || this.loadInFlight ? "СЕССИИ …" : this.error ? "СЕССИИ ⚠" : "СЕССИИ ↻", renderWidth, this.clearPressed, this.managePressed, Boolean(this.options.onOpenManager)),
       ...body,
       divider,
       resourceRow,

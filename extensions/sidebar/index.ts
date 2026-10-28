@@ -17,10 +17,10 @@ import type {
 } from "./registry.ts";
 
 const SIDEBAR_RATIO = 0.20;
-const MIN_SPLIT_WIDTH = 120;
 const MIN_SIDEBAR_WIDTH = 18;
 const MAX_SIDEBAR_WIDTH = 72;
 const MIN_MAIN_WIDTH = 64;
+const MIN_SPLIT_WIDTH = MIN_MAIN_WIDTH + MIN_SIDEBAR_WIDTH + 1;
 
 type LayoutTui = ViewportTUI & { layoutRoot?: unknown };
 
@@ -30,7 +30,7 @@ function isComponent(value: unknown): value is Component {
     typeof (value as Component).invalidate === "function";
 }
 type MutableHStack = HStack & { entries: Array<{ basis?: number | "auto" }> };
-type MutableVStack = VStack & { entries: Array<{ maxSize?: number }> };
+type MutableVStack = VStack & { entries: Array<{ minSize?: number; maxSize?: number }> };
 const RESET_STYLE = "\x1b[0m";
 
 type MountedPanel = {
@@ -74,7 +74,11 @@ function createLayoutEntry(
     basis: layout?.basis ?? "auto",
     grow: layout?.grow ?? 0,
     shrink: layout?.shrink ?? 0,
-    ...(layout?.minSize === undefined ? {} : { minSize: layout.minSize }),
+    ...(layout?.minSize === undefined ? {} : {
+      minSize: typeof layout.minSize === "function"
+        ? layout.minSize({ terminalRows: tui.terminal.rows, terminalColumns: tui.terminal.columns })
+        : layout.minSize,
+    }),
     ...(maxSize === undefined ? {} : { maxSize }),
   };
 }
@@ -144,7 +148,13 @@ export function installSidebar(
   function syncPanelLayout(): void {
     for (const panel of mountedPanels.values()) {
       const maxSize = resolveMaxSize(panel.definition.layout, tui);
+      const minSize = panel.definition.layout?.minSize;
       if (panel.entry && maxSize !== undefined) panel.entry.maxSize = maxSize;
+      if (panel.entry && minSize !== undefined) {
+        panel.entry.minSize = typeof minSize === "function"
+          ? minSize({ terminalRows: tui.terminal.rows, terminalColumns: tui.terminal.columns })
+          : minSize;
+      }
     }
   }
   const divider = new SidebarDivider(

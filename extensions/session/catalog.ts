@@ -8,6 +8,8 @@ export type SessionSummary = {
   readonly id: string;
   readonly path: string;
   readonly cwd: string;
+  readonly parentSession?: string;
+  readonly parentId?: string;
   readonly name?: string;
   readonly firstMessage: string;
   readonly modified: Date;
@@ -30,6 +32,7 @@ async function readSummary(path: string, expected: SessionFileSnapshot): Promise
     const lines = createInterface({ input, crlfDelay: Infinity });
     let header: Record<string, unknown> | undefined;
     let name: string | undefined;
+    let parentSession: string | undefined;
     let firstMessage = "";
     let userPromptCount = 0;
     let lastActivity: number | undefined;
@@ -41,6 +44,7 @@ async function readSummary(path: string, expected: SessionFileSnapshot): Promise
         if (!header) {
           if (entry.type !== "session" || typeof entry.id !== "string") return undefined;
           header = entry;
+          parentSession = typeof entry.parentSession === "string" ? entry.parentSession : undefined;
           continue;
         }
         if (entry.type === "session_info") name = typeof entry.name === "string" ? entry.name.trim() || undefined : undefined;
@@ -65,6 +69,7 @@ async function readSummary(path: string, expected: SessionFileSnapshot): Promise
       const created = typeof header.timestamp === "string" ? Date.parse(header.timestamp) : NaN;
       return {
         id: header.id as string, path, cwd: typeof header.cwd === "string" ? header.cwd : "",
+        ...(parentSession === undefined ? {} : { parentSession }),
         ...(name === undefined ? {} : { name }), firstMessage: firstMessage || "(no messages)", userPromptCount,
         modified: new Date(lastActivity !== undefined && lastActivity > 0 ? lastActivity : Number.isFinite(created) ? created : expected.mtimeMs),
       };
@@ -113,7 +118,12 @@ export function createSessionCatalog() {
           } catch { cache.delete(path); }
         }
       }));
-      return summaries;
+      const byPath = new Map(summaries.map(summary => [resolve(summary.path), summary.id]));
+      return summaries.map(summary => {
+        const parentId = summary.parentSession ? byPath.get(resolve(summary.parentSession)) : undefined;
+        if (!parentId) return summary;
+        return { ...summary, parentId };
+      });
     };
     queue = queue.then(load, load);
     return queue;

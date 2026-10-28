@@ -15,10 +15,10 @@ for (const width of [18, 30, 50]) test(`composition is always visible below a se
  const lines=panel.render(width);
  assert.ok(lines.every(line=>visibleWidth(line)<=width));
  assert.ok(lines[2].includes("25%/100K"));
- if (width >= 30) assert.ok(lines[2].includes("Cache:42%"));
+ if (width >= 30) assert.ok(lines[2].includes("Кэш:42%"));
  const separator=lines.findIndex(line=>line===`│ ${"─".repeat(width-4)} │`);
  if (width >= 30) assert.ok(separator>0);
- for(const label of ["System", "Tools", "Messages", "Tool Results", "Summary", "Other", "Images"])
+ for(const label of ["Система", "Инструм.", "Сообщения", "Результаты", "Сводка", "Другое", "Изображения"])
   assert.ok(lines.findIndex(line=>line.includes(label))>separator,label);
  assert.ok(lines.some(line=>line.includes("~100K")));
  assert.doesNotMatch(lines.join("\n"), /Composition|▸|▾|Top 3/);
@@ -40,7 +40,7 @@ test("run delta renders on the bar and after the window value", () => {
  });
  const lines=build(12000).render(50);
  assert.ok(lines[2].includes("25%/200K +12K"));
- assert.ok(lines[2].includes("Cache:42%"));
+ assert.ok(lines[2].includes("Кэш:42%"));
  assert.doesNotMatch(lines[2], /Catch/);
  // The accent segment is the last slice of the already-filled bar, so the bar length never grows.
  assert.equal(lines[3],`│ ${"█".repeat(12)}${"░".repeat(34)} │`);
@@ -64,9 +64,9 @@ test("missing snapshot is visible without interaction",()=>{
  const panel=new ContextPanel({fg:(_c:string,s:string)=>s} as any,{
   getDesiredWidth:()=>50,getUsage:()=>undefined,getModel:()=>"",getThinkingLevel:()=>"",
  });
- assert.match(panel.render(50).join("\n"),/No snapshot available/);
- assert.match(panel.render(50).join("\n"),/not observed/);
- assert.match(panel.render(50).join("\n"),/Cache:\?/);
+ assert.match(panel.render(50).join("\n"),/Нет данных для отображения/);
+ assert.match(panel.render(50).join("\n"),/нет данных/);
+ assert.match(panel.render(50).join("\n"),/Кэш:\?/);
 });
 
 test("activity rows render below the composition and bar", () => {
@@ -75,17 +75,18 @@ test("activity rows render below the composition and bar", () => {
          {number:2,startedAt:3000,tools:[]}],
   activeTools:[],recentTools:[],completedCount:0,failedCount:0} as any;
  const panel=new ContextPanel({fg:(_c:string,s:string)=>s} as any,{
-  getDesiredWidth:()=>50,getUsage:()=>({percent:25,contextWindow:200000} as any),getCacheHitRate:()=>42,
+  getDesiredWidth:()=>50,getUsage:()=>({percent:25,contextWindow:200000} as any),getCacheHitRate:()=>42,getCacheTokens:()=>123456,
   getModel:()=>"model",getThinkingLevel:()=>"off",getActivity:()=>activity,now:()=>4000,
   getEstimate:()=>estimateContext([{role:"user",content:"abcd"}]),
  });
  const lines=panel.render(50);
  const output=lines.join("\n");
  assert.doesNotMatch(output,/ACTIVITY/);
- assert.match(output,/2 turns · 3s · AVG TTFT 1\.0s · AVG TPS 40\.0/);
+ assert.match(output,/Кэш: 123K ток\. · 42%/);
+ assert.match(output,/2 ход\. · 3s · СРЕДН\. TTFT 1\.0s · TPS 40\.0/);
  assert.match(output,/TTFT 1\.2s\[fast\]/);
- const activityTop=lines.findIndex(line=>line.includes("2 turns"));
- assert.ok(lines.findIndex(line=>line.includes("Images"))<activityTop);
+ const activityTop=lines.findIndex(line=>line.includes("2 ход."));
+ assert.ok(lines.findIndex(line=>line.includes("Изображения"))<activityTop);
  assert.ok(activityTop>lines.findIndex(line=>line.includes("25%/200K")));
  assert.ok(lines.every(line=>visibleWidth(line)<=50));
  const settled=new ContextPanel({fg:(_c:string,s:string)=>s} as any,{
@@ -94,12 +95,12 @@ test("activity rows render below the composition and bar", () => {
   getActivity:()=>({...activity,phase:"settled",durationMs:3000} as any),
  });
  const narrow=settled.render(18);
- assert.match(narrow.join("\n"),/done 3s/);
+ assert.match(narrow.join("\n"),/2х готово 3s/);
  assert.ok(narrow.every(line=>visibleWidth(line)<=18));
  const idle=new ContextPanel({fg:(_c:string,s:string)=>s} as any,{
   getDesiredWidth:()=>50,getUsage:()=>({percent:25,contextWindow:200000} as any),
   getModel:()=>"model",getThinkingLevel:()=>"off",now:()=>4000,
   getActivity:()=>({...activity,phase:"idle",turns:[],startedAt:undefined} as any),
  });
- assert.match(idle.render(50).join("\n"),/Ready/);
+ assert.match(idle.render(50).join("\n"),/Готово/);
 });

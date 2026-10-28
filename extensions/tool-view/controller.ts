@@ -51,9 +51,9 @@ interface CompactToolSpec {
 
 function modeLabel(mode: ToolViewMode): string {
   switch (mode) {
-    case "normal": return "Normal";
-    case "compact": return "Compact";
-    case "hidden": return "Hidden";
+    case "normal": return "Полный";
+    case "compact": return "Краткий";
+    case "hidden": return "Скрытый";
   }
 }
 
@@ -83,12 +83,16 @@ function itemCount(text: string): number {
   return nonEmptyLineCount(text);
 }
 
-function formatCount(count: number, singular: string, plural = `${singular}s`): string {
-  return `${count} ${count === 1 ? singular : plural}`;
+function formatCount(count: number, forms: readonly [string, string, string]): string {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  const form = mod100 >= 11 && mod100 <= 14 ? forms[2]
+    : mod10 === 1 ? forms[0] : mod10 >= 2 && mod10 <= 4 ? forms[1] : forms[2];
+  return `${count} ${form}`;
 }
 
 function diffStats(diff: string | undefined): string {
-  if (!diff) return "Applied";
+  if (!diff) return "Применено";
   let additions = 0;
   let removals = 0;
   for (const line of diff.split("\n")) {
@@ -123,15 +127,15 @@ const COMPACT_SPECS: Record<string, CompactToolSpec> = {
     result: (result) => {
       const output = textOutput(result);
       const imageCount = result.content.filter((item) => item.type === "image").length;
-      if (imageCount > 0 && !output.trim()) return formatCount(imageCount, "image");
-      return formatCount(output.split("\n").length, "line");
+      if (imageCount > 0 && !output.trim()) return formatCount(imageCount, ["изображение", "изображения", "изображений"]);
+      return formatCount(output.split("\n").length, ["строка", "строки", "строк"]);
     },
   },
   bash: {
     call: (args) => ({ title: "bash", detail: compactText(args.command) || "…" }),
     result: (result) => {
       const lines = nonEmptyLineCount(textOutput(result));
-      return lines > 0 ? formatCount(lines, "line") : "";
+      return lines > 0 ? formatCount(lines, ["строка", "строки", "строк"]) : "";
     },
   },
   edit: {
@@ -143,28 +147,28 @@ const COMPACT_SPECS: Record<string, CompactToolSpec> = {
       const lines = typeof args.content === "string" ? args.content.split("\n").length : 0;
       return {
         title: "write",
-        detail: `${compactText(args.path) || "…"}${lines > 0 ? ` · ${formatCount(lines, "line")}` : ""}`,
+        detail: `${compactText(args.path) || "…"}${lines > 0 ? ` · ${formatCount(lines, ["строка", "строки", "строк"])}` : ""}`,
       };
     },
-    result: () => "Saved",
+    result: () => "Сохранено",
   },
   grep: {
     call: (args) => ({
       title: "grep",
       detail: `${compactText(args.pattern) || "…"} · ${compactText(args.path) || "."}`,
     }),
-    result: (result) => formatCount(itemCount(textOutput(result)), "match", "matches"),
+    result: (result) => formatCount(itemCount(textOutput(result)), ["совпадение", "совпадения", "совпадений"]),
   },
   find: {
     call: (args) => ({
       title: "find",
       detail: `${compactText(args.pattern) || "…"} · ${compactText(args.path) || "."}`,
     }),
-    result: (result) => formatCount(itemCount(textOutput(result)), "file"),
+    result: (result) => formatCount(itemCount(textOutput(result)), ["файл", "файла", "файлов"]),
   },
   ls: {
     call: (args) => ({ title: "ls", detail: compactText(args.path) || "." }),
-    result: (result) => formatCount(itemCount(textOutput(result)), "entry", "entries"),
+    result: (result) => formatCount(itemCount(textOutput(result)), ["элемент", "элемента", "элементов"]),
   },
 };
 
@@ -234,7 +238,7 @@ export async function installToolViewController(
         pi.getSettings().hideThinkingBlock !== true) return;
     nativeThinkingWarningShown = true;
     ctx.ui.notify(
-      "Pi is hiding Thinking natively. Set hideThinkingBlock: false (or use Ctrl+T) to apply Tool View to Thinking.",
+      "Pi скрывает блоки рассуждений. Установите hideThinkingBlock: false (или нажмите Ctrl+T), чтобы режим отображения влиял на них.",
       "warning",
     );
   };
@@ -287,7 +291,7 @@ export async function installToolViewController(
 
   function updateStatus(ctx: ExtensionContext): void {
     if (ctx.mode !== "tui") return;
-    ctx.ui.setStatus(MODE_STATUS_ID, `Tool View: ${modeLabel(mode)}`);
+    ctx.ui.setStatus(MODE_STATUS_ID, `Отображение инструментов: ${modeLabel(mode)}`);
   }
 
   function requestTranscriptRerender(ctx: ExtensionContext): void {
@@ -319,7 +323,7 @@ export async function installToolViewController(
       // session replacement or reload during the disk write.
       if (generation !== sessionGeneration || activeSessionId !== sessionId) return;
       if (persistError) {
-        ctx.ui.notify(`Tool View mode changed, but saving failed: ${errorMessage(persistError)}`, "warning");
+        ctx.ui.notify(`Режим отображения изменён, но не удалось сохранить настройку: ${errorMessage(persistError)}`, "warning");
       }
       updateStatus(ctx);
       notifyModeChange();
@@ -328,7 +332,7 @@ export async function installToolViewController(
       // the active stream) through the official UI API, without patching internals.
       ctx.ui.setHiddenThinkingLabel();
       warnNativeThinkingHidden(ctx);
-      if (notify) ctx.ui.notify(`Tool View: ${modeLabel(mode)}`, "info");
+      if (notify) ctx.ui.notify(`Отображение инструментов: ${modeLabel(mode)}`, "info");
     });
     return modeChangeQueue;
   }
@@ -444,7 +448,7 @@ export async function installToolViewController(
       render(width: number) {
         if (width <= 0) return [];
         const heading = theme.fg(statusColor, icon);
-        const shortSummary = summary.replace(/^(\d+) lines?$/, "$1 out");
+        const shortSummary = summary.replace(/^(\d+) (?:строка|строки|строк)$/, "$1 выв.");
         const compose = (label: string, withDuration: boolean) =>
           heading + (label ? `${icon ? "  " : ""}${theme.fg("muted", label)}` : "") +
           (withDuration && duration
@@ -548,7 +552,7 @@ export async function installToolViewController(
   }
 
   pi.registerCommand(MODE_COMMAND, {
-    description: "Change Tool View mode: normal, compact, hidden, or status",
+    description: "Изменить режим отображения: normal, compact, hidden или status",
     getArgumentCompletions: (prefix) => {
       const values = [...MODE_ORDER, "status"];
       const matches = values.filter((value) => value.startsWith(prefix.trim()));
@@ -559,18 +563,18 @@ export async function installToolViewController(
       if (!requested || requested === "status") {
         if (!requested && ctx.mode === "tui") {
           const choices = MODE_ORDER.map(
-            (value) => `${modeLabel(value)}${value === mode ? " · Current" : ""}`,
+            (value) => `${modeLabel(value)}${value === mode ? " · выбран" : ""}`,
           );
-          const selected = await createDialogUI(ctx.ui).select("Tool View mode", choices);
+          const selected = await createDialogUI(ctx.ui).select("Режим отображения", choices);
           const selectedIndex = selected ? choices.indexOf(selected) : -1;
           if (selectedIndex >= 0) await setMode(MODE_ORDER[selectedIndex]!, ctx);
           return;
         }
-        ctx.ui.notify(`Tool View: ${modeLabel(mode)}`, "info");
+        ctx.ui.notify(`Отображение инструментов: ${modeLabel(mode)}`, "info");
         return;
       }
       if (!isToolViewMode(requested)) {
-        ctx.ui.notify("Usage: /tool-view normal|compact|hidden|status", "warning");
+        ctx.ui.notify("Использование: /tool-view normal|compact|hidden|status", "warning");
         return;
       }
       await setMode(requested, ctx);
@@ -578,7 +582,7 @@ export async function installToolViewController(
   });
 
   pi.registerShortcut(MODE_SHORTCUT, {
-    description: "Cycle Tool View modes",
+    description: "Переключить режим отображения инструментов",
     handler: cycleMode,
   });
 

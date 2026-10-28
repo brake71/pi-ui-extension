@@ -93,8 +93,8 @@ test("uses one official renderer resolver without replacing or executing Pi tool
     const args = { path: "example.ts" };
     const state = {};
     assert.match(render(read, state, args), /  ›  read  example\.ts/);
-    assert.match(render(read, state, args), /2 lines/);
-    assert.match(render(resolver("bash", () => native)!, {}, { command: "echo ok" }), /  ›  bash  echo ok[\s\S]*    ⎿  2 lines/);
+    assert.match(render(read, state, args), /2 строки/);
+    assert.match(render(resolver("bash", () => native)!, {}, { command: "echo ok" }), /  ›  bash  echo ok[\s\S]*    ⎿  2 строки/);
     const styled: Array<{ color: string; value: string }> = [];
     const themeWithSpy = { ...theme, fg(color: string, value: string) {
       styled.push({ color, value });
@@ -105,11 +105,11 @@ test("uses one official renderer resolver without replacing or executing Pi tool
       args: { command: "echo ok" }, cwd: directory, state: {}, isError: false,
       isPartial: false, expanded: false, durationMs: 125,
     } as any);
-    assert.match(bashResult.render(100).join(""), /^    ⎿  2 lines · 125ms$/);
+    assert.match(bashResult.render(100).join(""), /^    ⎿  2 строки · 125ms$/);
     assert.ok(styled.some(item => item.color === "dim" && item.value === "125ms"), "direct-tool duration should be muted further");
     const narrowOutput = Array.from({ length: 36 }, (_, i) => i + 1)
       .map(width => ({ width, line: bashResult.render(width).join("") }))
-      .find(item => item.line.includes("2 out"));
+      .find(item => item.line.includes("2 выв."));
     assert.ok(narrowOutput, "direct-tool output count should fall back to out on narrow terminals");
     assert.ok(visibleWidth(narrowOutput.line) <= narrowOutput.width);
     for (const name of ["read", "bash", "edit", "write", "grep", "find", "ls"]) {
@@ -129,8 +129,8 @@ test("uses one official renderer resolver without replacing or executing Pi tool
         assert.ok(visibleWidth(lines[0]!) <= width, `${name} compact title must fit width ${width}`);
       }
     }
-    assert.match(render(resolver("write", () => native)!, {}, { path: "file.ts", content: "ok" }), /Saved/);
-    assert.match(render(resolver("edit", () => native)!, {}, { path: "file.ts" }), /Applied/);
+    assert.match(render(resolver("write", () => native)!, {}, { path: "file.ts", content: "ok" }), /Сохранено/);
+    assert.match(render(resolver("edit", () => native)!, {}, { path: "file.ts" }), /Применено/);
     const empty = resolver("bash", () => native)!;
     const zeroOutput = empty.renderResult!({
       content: [], details: {}, isError: false,
@@ -249,7 +249,7 @@ test("uses one official renderer resolver without replacing or executing Pi tool
       content: [{ type: "text", text: "Could not save" }], isError: true, durationMs: 25,
     }, false);
     assert.match(plain(failedWrite.render(100)), /NATIVE RESULT/, "failed tool uses native error details");
-    assert.doesNotMatch(plain(failedWrite.render(100)), /✓  Saved/, "failure must not report a saved result");
+    assert.doesNotMatch(plain(failedWrite.render(100)), /✓  Сохранено/, "failure must not report a saved result");
     await controller.setMode("hidden", ctx);
     transcript.setExpanded(false);
     assert.deepEqual(transcript.render(100), [], "hidden mode should remove the complete transcript row");

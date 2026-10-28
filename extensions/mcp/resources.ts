@@ -8,7 +8,7 @@ export type McpResourceEntry = {
 export function mcpResourceEntriesFromConfig(agentDir: string, cwd: string, trusted: boolean): readonly McpResourceEntry[] {
   return configuredMcpServers(agentDir, cwd, trusted).servers
     .filter((server) => server.enabled)
-    .map(({ name }) => ({ name, description: "Configured MCP server (connection not verified)" }));
+    .map(({ name }) => ({ name, description: "Сервер MCP настроен, соединение не проверено" }));
 }
 
 export function mergeMcpResourceEntries(configured: readonly McpResourceEntry[], live: readonly McpResourceEntry[]): readonly McpResourceEntry[] {
@@ -21,5 +21,5 @@ export function mergeMcpResourceEntries(configured: readonly McpResourceEntry[],
 export function mcpResourceEntriesFromStatus(value: unknown): readonly McpResourceEntry[] {
   return (adapterMcpServers(value) ?? [])
     .filter((server) => server.enabled)
-    .map(({ name }) => ({ name, description: "MCP server loaded in the current Pi session" }));
+    .map(({ name }) => ({ name, description: "Сервер MCP загружен в текущем сеансе Pi" }));
 }

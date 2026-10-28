@@ -80,7 +80,8 @@ test("Compact removes only the native leading tool gap; clicks still expand and 
     assert.equal(tool.render(80)[0], "", "Normal restores native tool spacing");
     assert.equal(clickAt(tool, 1)?.handled, true, "Normal click targets the unshifted header");
     mode = "hidden";
-    assert.equal(tool.render(80)[0], "", "Hidden spacing is not rewritten");
+    assert.deepEqual(tool.render(80), [], "Hidden suppresses the full owned tool row, including native images");
+    assert.equal(clickAt(tool, 0), undefined, "Hidden rows do not accept mouse interaction");
     mode = "compact";
     assert.match(tool.render(80)[0]!, /^›  bash/, "Compact switches back without reinstallation");
   } finally {

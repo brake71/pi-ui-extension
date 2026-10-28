@@ -105,16 +105,16 @@ test("the bundled CLI Thinking title expands despite separate TUI class identiti
     stopReason: "stop",
   } as any, false);
   const before = message.render(80).map(stripTerminalSequences);
-  assert.match(before.join("\n"), /\+ Thought/);
+  assert.match(before.join("\n"), /\+ Размышление/);
   assert.doesNotMatch(before.join("\n"), /bundled thinking body/);
-  const titleRow = before.findIndex(line => line.includes("Thought"));
+  const titleRow = before.findIndex(line => line.includes("Размышление"));
   const result = message.handleMouse?.({
     type: "click", button: "left", x: 3, y: titleRow, screenX: 3, screenY: titleRow,
     width: 80, height: before.length,
   } as any);
   assert.equal(result?.handled, true);
   const after = message.render(80).map(stripTerminalSequences).join("\n");
-  assert.match(after, /− Thought/);
+  assert.match(after, /− Размышление/);
   assert.match(after, /bundled thinking body/);
   assert.equal(AssistantMessageComponent.prototype.updateContent === original, false,
     "the SDK component has not been confused with the host bundle");

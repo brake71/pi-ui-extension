@@ -5,14 +5,14 @@ import type { CleanupSummary } from "../session/cleanup-preview.ts";
 
 /** Centered, cancellation-first preview with an explicit protection breakdown. */
 export async function confirmSessionCleanup(ui: ExtensionUIContext, summary: CleanupSummary): Promise<boolean> {
-  const description = `Eligible: ${summary.eligible}; protected/unavailable: ${summary.protected} (` +
-    `current ${summary.current}, pinned ${summary.pinned}, active ${summary.active}, unavailable ${summary.unavailable}). ` +
-    `Recently modified history is included. Other Pi processes without this extension cannot be detected.`;
+  const description = `Можно удалить: ${summary.eligible}; защищено/недоступно: ${summary.protected} (` +
+    `текущая ${summary.current}, закреплённые ${summary.pinned}, активные ${summary.active}, недоступные ${summary.unavailable}). ` +
+    `Недавно изменённые сессии тоже попадут в список. Pi без этого расширения обнаружить нельзя.`;
   if (typeof ui.custom !== "function") {
-    return summary.eligible > 0 && ui.confirm("Clear other sessions", description);
+    return summary.eligible > 0 && ui.confirm("Очистить остальные сессии", description);
   }
   return ui.custom<boolean>((tui, theme, _keys, done) => {
-    const actions = summary.eligible > 0 ? ["Cancel", `Move ${summary.eligible} to Trash`] : ["Cancel"];
+    const actions = summary.eligible > 0 ? ["Отмена", `В корзину (${summary.eligible})`] : ["Отмена"];
     const list = new SelectList(actions.map((label, index) => ({ value: String(index), label })), actions.length, {
       selectedPrefix: text => theme.fg("accent", text),
       selectedText: text => theme.fg("warning", theme.bold(text)),
@@ -26,38 +26,38 @@ export async function confirmSessionCleanup(ui: ExtensionUIContext, summary: Cle
     const component: Component = {
       render(width) {
         const rows = tui.terminal.rows;
-        const total = `Eligible to trash: ${summary.eligible}`;
-        const kept = `Protected / unavailable: ${summary.protected}`;
+        const total = `Можно удалить: ${summary.eligible}`;
+        const kept = `Защищено / недоступно: ${summary.protected}`;
         const tiny = rows < 17;
         const compact = rows < 28 || width < 34;
         const reasons = [
-          ["Current session", summary.current],
-          ["Pinned sessions", summary.pinned],
-          ["Active in another Pi", summary.active],
-          ["Unavailable session files", summary.unavailable],
+          ["Текущая сессия", summary.current],
+          ["Закреплённые", summary.pinned],
+          ["Активны в другом Pi", summary.active],
+          ["Файлы недоступны", summary.unavailable],
         ] as const;
         const labelWidth = Math.max(...reasons.map(([label]) => label.length));
         const countWidth = Math.max(...reasons.map(([, count]) => String(count).length));
         const details = compact
-          ? [`Current ${summary.current} · Pinned ${summary.pinned}`, `Other Pi ${summary.active} · Unavailable ${summary.unavailable}`]
+          ? [`Текущая ${summary.current} · Закреплено ${summary.pinned}`, `Другой Pi ${summary.active} · Недоступно ${summary.unavailable}`]
           : reasons.map(([label, count]) => `${label.padEnd(labelWidth)}  ${String(count).padStart(countWidth)}`);
         const info = tiny ? [
           theme.fg("success", total), theme.fg("warning", kept),
-          theme.fg("muted", `Cur ${summary.current} · Pin ${summary.pinned} · Pi ${summary.active} · N/A ${summary.unavailable}`),
+          theme.fg("muted", `Тек. ${summary.current} · Закр. ${summary.pinned} · Pi ${summary.active} · Недост. ${summary.unavailable}`),
         ] : [
           theme.fg("success", theme.bold(total)),
           theme.fg("warning", kept),
           "",
-          theme.fg("muted", "Protected reasons:"),
+          theme.fg("muted", "Причины защиты:"),
           ...details.map(text => theme.fg("muted", text)),
           "",
-          theme.fg("warning", "Recent sessions included; unknown Pi instances may be active."),
+          theme.fg("warning", "Недавние сессии включены; другие Pi могут быть активны."),
           "",
         ];
         actionsY = 3 + info.length;
-        return modalFrame(theme, width, "Clear other sessions", [
+        return modalFrame(theme, width, "Очистить остальные сессии", [
           ...info, ...list.render(Math.max(1, width - 4)),
-        ], "↑↓ choose · Enter select · Esc cancel", true);
+        ], "↑↓ выбор · Enter подтвердить · Esc отмена", true);
       },
       invalidate() { list.invalidate(); },
       handleInput(data) { list.handleInput(data); tui.requestRender(); },

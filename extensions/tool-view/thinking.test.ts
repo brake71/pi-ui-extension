@@ -26,7 +26,7 @@ const PLAIN: ThinkingColors = {
 
 const THINKING: MarkdownTransformContext = { messageType: "assistant-thinking", isStreaming: false, availableWidth: 48 };
 const LIVE: MarkdownTransformContext = { ...THINKING, isStreaming: true };
-const LIVE_TITLE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Thinking$/;
+const LIVE_TITLE = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Думает$/;
 const STREAMING: ThinkingStatus = { phase: "streaming" };
 const measured = (ms: number): ThinkingStatus => ({ phase: "complete", duration: { ms, approximate: false } });
 
@@ -61,16 +61,16 @@ test("Thinking time keeps one decimal under a minute and switches to m:ss above 
 });
 
 test("Thinking titles cover the live and completed states", () => {
-  assert.equal(renderThinkingHeader({ status: STREAMING, colors: PLAIN, disclosure: true, now: 0 }), "⠋ Thinking");
+  assert.equal(renderThinkingHeader({ status: STREAMING, colors: PLAIN, disclosure: true, now: 0 }), "⠋ Думает");
   assert.equal(renderThinkingHeader({ status: STREAMING, colors: PLAIN, disclosure: true, expanded: true, now: 0 }),
-    "⠋ Thinking", "an expanded live run keeps the indicator");
+    "⠋ Думает", "an expanded live run keeps the indicator");
   assert.notEqual(thinkingIndicatorFrame(0), thinkingIndicatorFrame(150), "the indicator follows the clock");
-  assert.equal(renderThinkingHeader({ status: measured(1300), colors: PLAIN, disclosure: true }), "+ Thought · 1.3s");
+  assert.equal(renderThinkingHeader({ status: measured(1300), colors: PLAIN, disclosure: true }), "+ Размышление · 1.3s");
   assert.equal(renderThinkingHeader({ status: measured(1300), colors: PLAIN, disclosure: true, expanded: true }),
-    "− Thought · 1.3s");
-  assert.equal(renderThinkingHeader({ status: measured(1300), colors: PLAIN }), "Thought · 1.3s",
+    "− Размышление · 1.3s");
+  assert.equal(renderThinkingHeader({ status: measured(1300), colors: PLAIN }), "Размышление · 1.3s",
     "Hidden has no disclosure glyph");
-  assert.equal(renderThinkingHeader({ status: { phase: "complete" }, colors: PLAIN, disclosure: true }), "+ Thought",
+  assert.equal(renderThinkingHeader({ status: { phase: "complete" }, colors: PLAIN, disclosure: true }), "+ Размышление",
     "unmeasured history shows the label without a fabricated time");
   const narrow = renderThinkingHeader({ status: measured(1300), colors: PLAIN, disclosure: true, width: 6 });
   assert.ok(visibleWidth(narrow) <= 6);
@@ -110,7 +110,7 @@ test("Thinking block renders the title alone until it is expanded", () => {
   let expanded = false;
   const toggles: number[] = [];
   const view = new ThinkingBlockView({
-    header: () => "+ Thought · 1.3s",
+    header: () => "+ Размышление · 1.3s",
     body,
     colors: PLAIN,
     expanded: () => expanded,
@@ -120,13 +120,13 @@ test("Thinking block renders the title alone until it is expanded", () => {
       expanded = !expanded;
     },
   });
-  assert.deepEqual(view.render(40).map(stripTerminalSequences), ["+ Thought · 1.3s"]);
+  assert.deepEqual(view.render(40).map(stripTerminalSequences), ["+ Размышление · 1.3s"]);
   assert.deepEqual(body.widths, [], "a collapsed block never renders its body");
 
   assert.deepEqual(view.handleMouse(click(0, 3)), { handled: true, render: true });
   assert.equal(toggles.length, 1);
   const open = view.render(40).map(stripTerminalSequences);
-  assert.deepEqual(open, ["+ Thought · 1.3s", "│ body one", "│", "│ body two"],
+  assert.deepEqual(open, ["+ Размышление · 1.3s", "│ body one", "│", "│ body two"],
     "the body starts on the row below the title and keeps paragraph height");
   assert.deepEqual(body.widths, [38], "the body is rendered two columns narrower for the bar");
 
@@ -138,7 +138,7 @@ test("only the title row toggles a Thinking block", () => {
   const body = fakeBody(["body one", "body two"]);
   let toggles = 0;
   const view = new ThinkingBlockView({
-    header: () => "+ Thought · 1.3s",
+    header: () => "+ Размышление · 1.3s",
     body,
     colors: PLAIN,
     expanded: () => false,
@@ -169,7 +169,7 @@ test("Thinking block keeps Pi's output padding for the title, the bar and its cl
   const body = fakeBody(["first body row", "", "second body row"]);
   let toggles = 0;
   const view = new ThinkingBlockView({
-    header: () => "+ Thought · 1.3s",
+    header: () => "+ Размышление · 1.3s",
     outputPad: 3,
     body,
     colors: PLAIN,
@@ -178,7 +178,7 @@ test("Thinking block keeps Pi's output padding for the title, the bar and its cl
     onToggle: () => toggles++,
   });
   const rows = view.render(40).map(stripTerminalSequences);
-  assert.equal(rows[0], "   + Thought · 1.3s", "the title starts on Pi's output padding");
+  assert.equal(rows[0], "   + Размышление · 1.3s", "the title starts on Pi's output padding");
   assert.deepEqual(rows.slice(1), ["   │ first body row", "   │", "   │ second body row"],
     "the quote bar sits on the padding column and body text clears it");
   assert.deepEqual(body.widths, [40 - 3 * 2 - 2], "padding is reserved on both sides like native Markdown");
@@ -191,7 +191,7 @@ test("Thinking block keeps Pi's output padding for the title, the bar and its cl
 
 test("an expanded body ends with one blank row only when the layout asks for it", () => {
   const build = (trailingBlank?: () => boolean, expanded = true) => new ThinkingBlockView({
-    header: () => "+ Thought · 1.3s",
+    header: () => "+ Размышление · 1.3s",
     body: fakeBody(["body one", "", "body two"]),
     colors: PLAIN,
     expanded: () => expanded,
@@ -199,17 +199,17 @@ test("an expanded body ends with one blank row only when the layout asks for it"
     onToggle: () => {},
     trailingBlank,
   });
-  assert.deepEqual(build(() => true).render(40), ["+ Thought · 1.3s", "│ body one", "│", "│ body two", ""]);
-  assert.deepEqual(build().render(40), ["+ Thought · 1.3s", "│ body one", "│", "│ body two"],
+  assert.deepEqual(build(() => true).render(40), ["+ Размышление · 1.3s", "│ body one", "│", "│ body two", ""]);
+  assert.deepEqual(build().render(40), ["+ Размышление · 1.3s", "│ body one", "│", "│ body two"],
     "without a request the body keeps no trailing blank");
-  assert.deepEqual(build(() => true, false).render(40), ["+ Thought · 1.3s"],
+  assert.deepEqual(build(() => true, false).render(40), ["+ Размышление · 1.3s"],
     "a collapsed block never adds the trailing gap");
-  assert.deepEqual(build(() => false).render(40), ["+ Thought · 1.3s", "│ body one", "│", "│ body two"]);
+  assert.deepEqual(build(() => false).render(40), ["+ Размышление · 1.3s", "│ body one", "│", "│ body two"]);
 
   let asks = false;
   let toggles = 0;
   const view = new ThinkingBlockView({
-    header: () => "+ Thought · 1.3s",
+    header: () => "+ Размышление · 1.3s",
     body: fakeBody(["body one"]),
     colors: PLAIN,
     expanded: () => true,
@@ -219,7 +219,7 @@ test("an expanded body ends with one blank row only when the layout asks for it"
   });
   assert.deepEqual(view.render(40).length, 2);
   asks = true;
-  assert.deepEqual(view.render(40), ["+ Thought · 1.3s", "│ body one", ""],
+  assert.deepEqual(view.render(40), ["+ Размышление · 1.3s", "│ body one", ""],
     "the trailing gap follows the live layout on every render");
   assert.equal(view.handleMouse(click(2, 0)), undefined, "the trailing blank row is not a click target");
   assert.equal(toggles, 0);
@@ -229,7 +229,7 @@ test("Thinking rows are clipped to the terminal at every narrow width", () => {
   const source = ["😀😀😀😀😀😀", "用户想知道 pi-ui-extension 的版本 🚀", "", "```ts", "const a = 1;", "```"];
   for (const pad of [0, 1, 3]) {
     const view = new ThinkingBlockView({
-      header: () => "+ Thought · 1.3s",
+      header: () => "+ Размышление · 1.3s",
       outputPad: pad,
       body: fakeBody(source),
       colors: PLAIN,
@@ -253,10 +253,10 @@ test("the fallback transformer keeps Compact collapsed to the title in every sta
   const transform = (markdown: string, context: MarkdownTransformContext, mode: "normal" | "compact" | "hidden",
     getStatus?: () => ThinkingStatus) => stripTerminalSequences(transformThinkingText(markdown, context, mode, getStatus));
   assert.equal(transform(source, THINKING, "normal", status), source);
-  assert.equal(transform(source, THINKING, "compact", status), "+ Thought · 1.3s");
+  assert.equal(transform(source, THINKING, "compact", status), "+ Размышление · 1.3s");
   assert.match(transform(source, LIVE, "compact", () => STREAMING), LIVE_TITLE);
-  assert.equal(transform(source, THINKING, "hidden", status), "Thought · 1.3s");
-  assert.equal(transform(source, THINKING, "hidden"), "Thought", "complete without a measured time");
+  assert.equal(transform(source, THINKING, "hidden", status), "Размышление · 1.3s");
+  assert.equal(transform(source, THINKING, "hidden"), "Размышление", "complete without a measured time");
   assert.match(transform(source, LIVE, "hidden"), LIVE_TITLE);
   assert.equal(transform(source, LIVE, "compact", () => STREAMING).includes("old one"), false,
     "Compact never shows body rows");

@@ -86,15 +86,15 @@ test("Codemode uses compact summaries until clicked, native details when expande
     // Default compact mode summarizes metadata, hiding executable code and nested arguments.
     assert.match(visible(), /  ›  codemode\b/);
     assert.doesNotMatch(visible(), /code lines|Code: \?/, "collapsed Codemode must not show code line counts");
-    assert.match(visible(), /3 calls/);
-    assert.match(visible(), /1 ok/);
-    assert.match(visible(), /1 failed/);
-    assert.match(visible(), /1 cancelled/);
-    assert.match(visible(), /2 lines/);
-    assert.match(visible(), /1 image/);
+    assert.match(visible(), /3 вызова/);
+    assert.match(visible(), /1 успешн\./);
+    assert.match(visible(), /1 ошибок/);
+    assert.match(visible(), /1 отменено/);
+    assert.match(visible(), /2 строки/);
+    assert.match(visible(), /1 изображение/);
     assert.match(visible(), /1.3s/);
     assert.doesNotMatch(visible(), /✓/, "Compact must omit redundant green success checkmarks");
-    assert.match(visible(), /! Partial/, "successful parent with failed nested calls is not marked fully successful");
+    assert.match(visible(), /! Частично/, "successful parent with failed nested calls is not marked fully successful");
     assert.doesNotMatch(visible(), /[\u3400-\u9fff]/, "Compact labels must be English-only");
     assert.doesNotMatch(visible(), /DO_NOT_DISPLAY|PRIVATE_OUTPUT_TEXT|PRIVATE_NESTED_ARGS/);
     const clickTitle = (marker: string, width = 110) => {
@@ -138,7 +138,7 @@ test("Codemode uses compact summaries until clicked, native details when expande
 
     await controller.setMode("compact", ctx);
     transcript.setExpanded(false);
-    assert.match(visible(), /3 calls/);
+    assert.match(visible(), /3 вызова/);
 
     // The in-progress callback is a metadata-only summary as well.
     transcript.updateResult({
@@ -149,15 +149,15 @@ test("Codemode uses compact summaries until clicked, native details when expande
         ],
       }, isError: false,
     }, true);
-    assert.match(visible(), /Running/);
-    assert.match(visible(), /1 running/);
+    assert.match(visible(), /Выполняется/);
+    assert.match(visible(), /1 выполняется/);
     assert.doesNotMatch(visible(), /DO_NOT_DISPLAY|PRIVATE_NESTED_ARGS/);
     clickTitle("›  codemode");
     assert.match(visible(), /⌄  /);
     assert.match(visible(), /DO_NOT_DISPLAY/, "can inspect Codemode while it is still streaming");
     assert.match(visible(), /PRIVATE_NESTED_ARGS/, "running native nested calls are available on demand");
     clickTitle("⌄  ");
-    assert.match(visible(), /… Running/);
+    assert.match(visible(), /… Выполняется/);
     assert.doesNotMatch(visible(), /PRIVATE_NESTED_ARGS/);
 
     transcript.updateResult({
@@ -166,8 +166,8 @@ test("Codemode uses compact summaries until clicked, native details when expande
       isError: true,
       durationMs: 400,
     }, false);
-    assert.match(visible(), /✗ Failed/);
-    assert.match(visible(), /1 failed/);
+    assert.match(visible(), /✗ Ошибка/);
+    assert.match(visible(), /1 ошибок/);
     assert.match(visible(), /400ms/);
     assert.doesNotMatch(visible(), /DO_NOT_DISPLAY|PRIVATE_OUTPUT_TEXT|PRIVATE_NESTED_ARGS/);
     clickTitle("›  codemode");
@@ -229,12 +229,12 @@ test("one Thinking followed by multiple codemode calls preserves independent too
       details: { calls: [{ status: "ok" }, { status: "ok" }] }, durationMs: 1900, isError: false,
     } as any, false);
     const combined = [thinking, first, second].map((c) => stripAnsi(c.render(110).join("\n"))).join("\n");
-    assert.equal((combined.match(/\+ Thought · 3\.0s/g) ?? []).length, 1);
+    assert.equal((combined.match(/\+ Размышление · 3\.0s/g) ?? []).length, 1);
     assert.equal((combined.match(/  ›  codemode/g) ?? []).length, 2);
-    assert.match(combined, /1 call · 1 ok/);
-    assert.match(combined, /2 calls · 2 ok/);
-    assert.match(combined, /1 line · 225ms/);
-    assert.match(combined, /3 lines · 1.9s/);
+    assert.match(combined, /1 вызов · 1 успешн\./);
+    assert.match(combined, /2 вызова · 2 успешн\./);
+    assert.match(combined, /1 строка · 225ms/);
+    assert.match(combined, /3 строки · 1.9s/);
     assert.doesNotMatch(combined, /⎿\s*✓/, "success rows should contain data without a checkmark");
     assert.doesNotMatch(combined, /✓ Done|Private reasoning|text\('a'\)|text\('b'\)/);
   } finally {
@@ -304,8 +304,8 @@ test("Codemode Compact handles missing, malformed, or very large metadata withou
       { content: [], details: { calls: [{ status: "unknown" }, null, { status: "ok" }] } },
       { isPartial: false, expanded: false }, theme, context,
     );
-    assert.match(response.render(100).join(""), /3 calls/);
-    assert.match(response.render(100).join(""), /1 ok/);
+    assert.match(response.render(100).join(""), /3 вызова/);
+    assert.match(response.render(100).join(""), /1 успешн\./);
     assert.doesNotMatch(response.render(100).join(""), /NaN/);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -342,10 +342,10 @@ test("Codemode Compact keeps each styled row to one terminal line and prioritize
         assert.ok(visibleWidth(lines[0]!) <= width, `width ${width} overflow: ${lines[0]}`);
       }
     }
-    assert.match(result.render(28).join(""), /Failed/);
-    assert.match(result.render(28).join(""), /4 calls/);
-    assert.doesNotMatch(result.render(28).join(""), /2 (?:out|lines)/);
-    assert.match(result.render(95).join(""), /2 lines/);
+    assert.match(result.render(28).join(""), /Ошибка/);
+    assert.match(result.render(28).join(""), /4 вызова/);
+    assert.doesNotMatch(result.render(28).join(""), /2 (?:вывод|строки)/);
+    assert.match(result.render(95).join(""), /2 строки/);
     assert.match(result.render(95).join(""), /1\.5s/);
     assert.match(call.render(95).join(""), /codemode/);
     assert.doesNotMatch(call.render(95).join(""), /code lines/);
@@ -378,17 +378,17 @@ test("Codemode output count falls back from lines to out only on narrow rows; du
       details: { calls: Array.from({ length: 6 }, () => ({ status: "ok" })) },
     }, { isPartial: false, expanded: false }, theme, context);
     const full = result.render(110).join("");
-    assert.match(full, /^    ⎿  6 calls · 6 ok │ 179 lines · 213ms$/);
+    assert.match(full, /^    ⎿  6 вызовов · 6 успешн. │ 179 строк · 213ms$/);
     assert.doesNotMatch(full, /✓/, "no standalone success status glyph");
     assert.ok(applied.some(item => item.name === "dim" && item.value === " │ "));
     assert.ok(applied.some(item => item.name === "dim" && item.value === "213ms"));
-    assert.ok(applied.some(item => item.name === "muted" && item.value === "179 lines"));
+    assert.ok(applied.some(item => item.name === "muted" && item.value === "179 строк"));
     const narrowFallback = Array.from({ length: 85 }, (_, i) => i + 1)
       .map(width => ({ width, value: result.render(width).join("") }))
-      .find(item => item.value.includes("179 out"));
+      .find(item => item.value.includes("179 выв."));
     assert.ok(narrowFallback, "output lines should fall back to out before hiding the count");
     assert.ok(visibleWidth(narrowFallback.value) <= narrowFallback.width);
-    assert.doesNotMatch(narrowFallback.value, /179 lines/);
+    assert.doesNotMatch(narrowFallback.value, /179 строки/);
     const reallyNarrow = result.render(10).join("");
     assert.ok(reallyNarrow.length > 0, "narrow rows should keep an available metric");
     assert.ok(visibleWidth(reallyNarrow) <= 10);
