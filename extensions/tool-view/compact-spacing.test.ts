@@ -76,6 +76,10 @@ test("Compact removes only the native leading tool gap; clicks still expand and 
     assert.equal(clickAt(unowned, 1)?.handled, true, "native tool click uses its original y coordinate");
     assert.equal(unowned.render(80).length, unownedBefore);
 
+    mode = "focus";
+    assert.match(tool.render(80)[0]!, /^›  bash/, "Focus trims the same tool gap as Compact");
+    assert.equal(clickAt(tool, 0)?.handled, true, "Focus keeps the shifted click target");
+
     mode = "normal";
     assert.equal(tool.render(80)[0], "", "Normal restores native tool spacing");
     assert.equal(clickAt(tool, 1)?.handled, true, "Normal click targets the unshifted header");

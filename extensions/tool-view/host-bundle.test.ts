@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import test from "node:test";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   AssistantMessageComponent,
   getMarkdownTheme,
@@ -13,9 +14,30 @@ import { installCompactSpacingGuard, markCompactSpacingRenderer } from "./compac
 import { installCompactThinkingAdapter } from "./thinking-adapter.ts";
 import { transformThinkingText } from "./thinking.ts";
 
-const cliEntry = join(
-  process.cwd(), "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js",
-);
+const sdkRoot = join(process.cwd(), "node_modules", "@earendil-works");
+const cliEntry = join(sdkRoot, "pi-coding-agent", "dist", "bundle", "cli.js");
+
+/** Node resolves from the nearest node_modules, so a nested copy would win over the root one. */
+function resolveSdkPackage(from: string, name: string) {
+  for (let directory = from; ; directory = dirname(directory)) {
+    const candidate = join(directory, "node_modules", "@earendil-works", name);
+    if (existsSync(join(candidate, "package.json"))) return candidate;
+    if (dirname(directory) === directory) return undefined;
+  }
+}
+const sdkVersion = (directory: string) =>
+  JSON.parse(readFileSync(join(directory, "package.json"), "utf8")).version;
+
+test("the host classes load one Pi SDK family, with the CLI on the root Pi TUI", () => {
+  const expected = sdkVersion(join(sdkRoot, "pi-coding-agent"));
+  assert.equal(sdkVersion(join(sdkRoot, "pi-tui")), expected,
+    "both directly developed Pi packages must be the same axis");
+  assert.equal(realpathSync(cliEntry).startsWith(realpathSync(sdkRoot)), true,
+    "the tested CLI bundle must come from the installed root SDK");
+  const hostTui = resolveSdkPackage(join(sdkRoot, "pi-coding-agent"), "pi-tui");
+  assert.equal(hostTui && realpathSync(hostTui), realpathSync(join(sdkRoot, "pi-tui")),
+    "a second TUI inside the host would load a different class family than the tests import");
+});
 
 test("the active Pi CLI bundle resolves the real host classes, not SDK copies", async () => {
   const bundle = await loadActivePiBundle(cliEntry);
@@ -94,9 +116,19 @@ test("the bundled CLI Thinking title expands despite separate TUI class identiti
   const status = () => ({ phase: "complete" as const });
   const transformer = (markdown: string, context: any) =>
     transformThinkingText(markdown, context, "compact", status);
+  // A third-party transformer must receive the same session entry identity Pi gives its own Markdown.
+  const history = { messageId: "bundled-entry-0001", timestamp: "2025-08-01T10:20:30.000Z" };
+  const seen: Array<Record<string, unknown>> = [];
+  const thirdParty = (markdown: string, context: any) => {
+    if (context.messageType === "assistant-thinking" && markdown.includes("bundled thinking body")) {
+      seen.push({ messageId: context.messageId, timestamp: context.timestamp });
+    }
+    return markdown;
+  };
   const message = new bundle.AssistantMessageComponent(
-    undefined, false, getMarkdownTheme(), "Thinking...", 1, [transformer],
+    undefined, false, getMarkdownTheme(), "Thinking...", 1, [transformer, thirdParty],
   );
+  Object.assign(message, history);
   assert.equal(installCompactThinkingAdapter(
     () => "compact", transformer, { status }, prototype,
   ), true);
@@ -116,6 +148,9 @@ test("the bundled CLI Thinking title expands despite separate TUI class identiti
   const after = message.render(80).map(stripTerminalSequences).join("\n");
   assert.match(after, /− Размышление/);
   assert.match(after, /bundled thinking body/);
+  assert.ok(seen.length > 0, "the rebuilt body on the host class reaches the third-party transformer");
+  assert.ok(seen.every((entry) => entry.messageId === history.messageId && entry.timestamp === history.timestamp),
+    "the host class rebuilt body keeps the session entry id and timestamp");
   assert.equal(AssistantMessageComponent.prototype.updateContent === original, false,
     "the SDK component has not been confused with the host bundle");
 });

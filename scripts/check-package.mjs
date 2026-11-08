@@ -25,9 +25,12 @@ export function checkPackageFiles(sourceRoot, paths) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const args = ["pack", "--dry-run", "--json", "--ignore-scripts"];
+  // Windows Node cannot execFileSync a .cmd shim; run npm's JS entry point instead.
+  const npmCli = process.env.npm_execpath ?? join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
   const list = JSON.parse(execFileSync(
-    process.platform === "win32" ? "npm.cmd" : "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
+    process.platform === "win32" ? process.execPath : "npm",
+    process.platform === "win32" ? [npmCli, ...args] : args,
     { cwd: root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout: 60_000 },
   ));
   checkPackageFiles(root, list[0]?.files?.map((entry) => entry.path));

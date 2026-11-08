@@ -51,7 +51,7 @@ test("direct, nested, parent snapshot and restored branch share one call identit
   ], "switching branches must drop the old nested tool results");
 });
 
-test("anonymized Pi 1.2.0 session reconstructs 32 parent results and 61 nested calls", () => {
+test("an anonymized real session reconstructs 32 parent results and 61 nested calls", () => {
   // Derived from the user's real session tool NAMES and counts only.
   // No prompts, args, file paths, model responses or original identifiers.
   const previous = [

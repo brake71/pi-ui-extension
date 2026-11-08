@@ -2,7 +2,7 @@ import {
   ToolExecutionComponent,
   type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
-import type { ToolViewMode } from "./types.ts";
+import { isCompactMode, type ToolViewMode } from "./types.ts";
 
 const OWNER_KEY = Symbol.for("pi-ui-extension:compact-spacing-owned-renderer");
 const GUARD_KEY = Symbol.for("pi-ui-extension:compact-spacing-guard");
@@ -49,8 +49,8 @@ export function markCompactSpacingRenderer<T extends ToolRenderers>(renderer: T)
  *
  * This compatibility adapter fails closed: `hasCompatibleSelfToolLayout`
  * inspects the live host methods on every install, which is the layout contract
- * it depends on. No exact-version whitelist is used, because Pi 1.4.0 keeps this
- * layout unchanged and a version update must not silently disable Compact spacing.
+ * it depends on. No exact-version whitelist is used: the guard follows the live
+ * layout, so a Pi version update cannot silently disable Compact spacing.
  */
 export function installCompactSpacingGuard(
   getMode: () => ToolViewMode,
@@ -76,7 +76,7 @@ export function installCompactSpacingGuard(
   const trimmed = new WeakMap<ToolExecutionComponent, boolean>();
   const isOwnedTool = (tool: ToolInstance): boolean =>
     tool.toolDefinition?.renderShell === "self" && tool.toolDefinition?.[OWNER_KEY] === true;
-  const eligible = (tool: ToolInstance): boolean => getMode() === "compact" && isOwnedTool(tool);
+  const eligible = (tool: ToolInstance): boolean => isCompactMode(getMode()) && isOwnedTool(tool);
   const hidden = (tool: ToolInstance): boolean => getMode() === "hidden" && isOwnedTool(tool);
 
   const patchedRender: typeof originalRender = function (this: ToolExecutionComponent, ...args) {
@@ -85,7 +85,7 @@ export function installCompactSpacingGuard(
       return [];
     }
     const lines = originalRender.apply(this, args);
-    // A single leading empty row is the exact layout invariant in both SDKs.
+    // A single leading empty row is the exact layout invariant of the host SDK.
     const compact = eligible(this as unknown as ToolInstance) && lines.length > 1 && lines[0] === "";
     trimmed.set(this, compact);
     return compact ? lines.slice(1) : lines;

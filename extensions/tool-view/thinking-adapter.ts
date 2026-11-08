@@ -38,6 +38,9 @@ type ComponentInternals = {
   contentContainer?: { children?: unknown[]; addChild?: (child: Component) => void };
   markdownTransformers?: readonly MarkdownTransformer[];
   isStreaming?: boolean;
+  /** Pi 1.5 session entry identity for this message; absent on live messages. */
+  messageId?: string;
+  timestamp?: string;
   /** Pi's own Thinking visibility state; both must be honored, never bypassed. */
   hideThinkingBlock?: boolean;
   thinkingVisibilityOverrides?: Map<number, boolean>;
@@ -54,6 +57,8 @@ type MarkdownShape = {
   paddingX?: number;
 };
 type ThinkingBlockLike = { type: string; thinking?: string; text?: string; name?: string };
+/** Pi 1.5 adds the persisted session entry id and ISO timestamp; live messages may carry neither. */
+type MessageHistory = { messageId?: string; timestamp?: string };
 
 export interface CompactThinkingOptions {
   /** Explicit thinking_end phase plus measured time for one Thinking run. */
@@ -72,14 +77,14 @@ export interface CompactThinkingOptions {
  */
 const expansion = new WeakMap<AssistantMessageComponent, Map<number, boolean>>();
 
-function isExpanded(component: AssistantMessageComponent, index: number): boolean {
-  return expansion.get(component)?.get(index) ?? false;
+function isExpanded(component: AssistantMessageComponent, index: number, mode: ToolViewMode): boolean {
+  return expansion.get(component)?.get(index) ?? (mode === "focus");
 }
 
-function toggleExpanded(component: AssistantMessageComponent, index: number): void {
+function toggleExpanded(component: AssistantMessageComponent, index: number, mode: ToolViewMode): void {
   const runs = expansion.get(component) ?? new Map<number, boolean>();
   expansion.set(component, runs);
-  runs.set(index, !(runs.get(index) ?? false));
+  runs.set(index, !isExpanded(component, index, mode));
 }
 
 function isThinkingRegion(child: unknown): child is ThinkingRegion {
@@ -113,7 +118,7 @@ function readOutputPad(component: AssistantMessageComponent | ComponentInternals
 
 function applyTransformers(
   markdown: string,
-  context: MarkdownTransformContext,
+  context: MarkdownTransformContext & MessageHistory,
   transformers: readonly MarkdownTransformer[],
 ): string {
   let transformed = markdown;
@@ -137,12 +142,16 @@ function createBody(
   shape: MarkdownShape,
   transformers: readonly MarkdownTransformer[],
   streaming: boolean,
+  // Pi hands these to its own Markdown; a rebuilt body must pass them on unchanged.
+  history: MessageHistory,
 ): Markdown {
   const style = shape.defaultTextStyle ?? { color: shape.theme.quote, italic: true };
   const transform = transformers.length === 0
     ? undefined
     : (markdown: string, availableWidth: number) =>
-      applyTransformers(markdown, { messageType: "assistant-thinking", isStreaming: streaming, availableWidth }, transformers);
+      applyTransformers(markdown, {
+        messageType: "assistant-thinking", isStreaming: streaming, availableWidth, ...history,
+      }, transformers);
   // Padding is applied by ThinkingBlockView so the quote bar can sit inside it.
   return new Markdown(text, 0, 0, shape.theme, style, transform ? { transform } : undefined);
 }
@@ -200,26 +209,29 @@ function decorateRegion(
   const colors: ThinkingColors = markdownThinkingColors(shape.theme, shape.defaultTextStyle?.color);
   const status = options.status(run.text, streaming);
   // Everything except this extension's transformer still applies to the body.
-  const others = ((component as unknown as ComponentInternals).markdownTransformers ?? [])
+  const internals = component as unknown as ComponentInternals;
+  const others = (internals.markdownTransformers ?? [])
     .filter((candidate) => candidate !== transformer);
-  const body = mode === "compact" ? createBody(run.text, shape, others, streaming) : undefined;
+  const body = mode !== "hidden"
+    ? createBody(run.text, shape, others, streaming, { messageId: internals.messageId, timestamp: internals.timestamp })
+    : undefined;
   const nativeOnMouse = region.onMouse;
   region.child = new ThinkingBlockView({
     header: (width) => renderThinkingHeader({
       status,
       colors,
       width,
-      disclosure: mode === "compact",
-      expanded: isExpanded(component, index),
+      disclosure: mode !== "hidden",
+      expanded: isExpanded(component, index, mode),
     }),
     // Keep Pi's own message padding so the title, the quote bar and the
     // surrounding assistant text all start on the same column.
     outputPad: shape.paddingX ?? readOutputPad(component) ?? ASSUMED_OUTPUT_PAD,
     body,
     colors,
-    expanded: () => isExpanded(component, index),
-    toggleable: () => mode === "compact",
-    onToggle: () => toggleExpanded(component, index),
+    expanded: () => isExpanded(component, index, mode),
+    toggleable: () => mode !== "hidden",
+    onToggle: () => toggleExpanded(component, index, mode),
     trailingBlank: () => needsTrailingBlank(content, run.startIndex, stopReason, options),
   });
   // The view handles title clicks itself; everything else must stay a no-op so
@@ -279,14 +291,14 @@ function decoratePendingRun(
       status: { phase: "streaming" },
       colors,
       width,
-      disclosure: mode === "compact",
-      expanded: isExpanded(component, index),
+      disclosure: mode !== "hidden",
+      expanded: isExpanded(component, index, mode),
     }),
     outputPad: readOutputPad(component) ?? ASSUMED_OUTPUT_PAD,
     colors,
-    expanded: () => isExpanded(component, index),
-    toggleable: () => mode === "compact",
-    onToggle: () => toggleExpanded(component, index),
+    expanded: () => isExpanded(component, index, mode),
+    toggleable: () => mode !== "hidden",
+    onToggle: () => toggleExpanded(component, index, mode),
   }));
 }
 
@@ -349,8 +361,8 @@ function unwrapPreviousAdapters(prototype: AdapterPrototype): boolean {
  * that expands on a title click. `decorate()` re-checks Pi's layout on every
  * render (region count, Markdown shape, transformer identity) and keeps native
  * behavior on an unknown shape, so no exact-version whitelist is needed. A
- * version list would only mean that a Pi version update such as 1.4.0 silently
- * disables Thinking clicks instead of failing shut on a real layout change.
+ * version list would only mean that a Pi version update silently disables
+ * Thinking clicks instead of failing shut on a real layout change.
  */
 export function installCompactThinkingAdapter(
   getMode: () => ToolViewMode,

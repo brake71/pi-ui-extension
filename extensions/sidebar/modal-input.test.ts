@@ -43,11 +43,12 @@ test("capturing overlays block sidebar clicks and drags and cancel pending gestu
     tui.currentLayout = renderLayoutFrame(tui.layoutRoot, 200, 50, () => {});
     const sessions = find(tui.currentLayout.root, "SessionPanel").rect;
     const view = find(tui.currentLayout.root, "ToolViewPanel").rect;
+    const dividerX = tui.terminal.columns - tui.layoutRoot.entries[2].basis - 1;
     // A press begun before the modal must not fire after it closes.
     mouse(sessions.x + 4, sessions.y + 1);
     overlay = modal();
     tui.handleTerminalInput("x");
-    for (const [x, y] of [[sessions.x + 4, sessions.y + 1], [view.x + 4, view.y + 1], [159, 4]]) {
+    for (const [x, y] of [[sessions.x + 4, sessions.y + 1], [view.x + 4, view.y + 1], [dividerX, 4]]) {
       mouse(x!, y!); mouse(x!, y!, "m");
     }
     assert.equal(tui.overlayStack.length, 1, "divider cannot create a preview behind the modal");
@@ -59,7 +60,7 @@ test("capturing overlays block sidebar clicks and drags and cancel pending gestu
     mouse(sessions.x + 4, sessions.y + 1); mouse(sessions.x + 4, sessions.y + 1, "m");
     overlay = modal(); await Promise.resolve(); assert.deepEqual(actions, []); overlay.hide();
     // Non-capturing drag previews remain usable, and a new modal cancels them.
-    mouse(159, 4); assert.equal(tui.overlayStack.length, 1);
+    mouse(dividerX, 4); assert.equal(tui.overlayStack.length, 1);
     overlay = modal(); tui.handleTerminalInput("x");
     assert.equal(tui.overlayStack.length, 1);
     overlay.hide(); mouse(149, 4, "m");

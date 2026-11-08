@@ -10,28 +10,28 @@
 
 ## 快速开始
 
-需要 **Pi Coding Agent >= 1.3.0**、**Node.js >= 22.19.0** 和 **Pi fullscreen 模式**。
+需要 **Pi Coding Agent >= 1.5.0**、**Node.js >= 22.19.0** 和 **Pi fullscreen 模式**。
 
 ```bash
 pi install npm:pi-ui-extension
 pi --tui-mode fullscreen
 ```
 
-启动后右侧边栏自动出现。普通 TUI 模式不支持右侧边栏。
+启动后右侧边栏自动出现，默认约占**终端宽度的 22%**（最小 18、最大 72 个字符列），可拖动左侧分隔线调整宽度。拖动后的宽度会写入 Pi agent 目录下的 `pi-ui-extension/ui-layout.json`，下次启动恢复；没有可用的已保存值时使用 22% 默认宽度。终端变窄只限制当前显示宽度，不会覆盖已保存的宽度。普通 TUI 模式不支持右侧边栏。
 
 ## 功能介绍
 
 | 面板 | 功能 |
 | --- | --- |
-| **SESSIONS** | 最近会话、置顶和管理 |
-| **CTX** | 模型、上下文使用量、输入 / 输出 / 缓存 Token 及可展开的组成明细 |
-| **VIEW** | 显示模式、Tool/MCP 调用统计和资源快捷入口 |
+| **SESSIONS** | 最近会话、置顶、管理及嵌套会话浏览 |
+| **CTX** | 精简模型与上下文窗口用量、服务端 Token 累计量及可展开的组成明细 |
+| **VIEW** | 四个纵向全宽显示模式（Normal / Focus / Compact / Hidden）、Tool/MCP 调用统计和资源快捷入口 |
 
 支持鼠标、滚轮和终端缩放。会话管理、资源浏览和模式选择使用居中弹窗：可用 ↑/↓ 和 Enter 选择，Esc 关闭。弹窗打开时，背景边栏操作暂停。资源详情支持只读查看和滚动。
 
 ### 会话与清理
 
-**SESSIONS** 展示当前项目的最近会话。点击会话可切换，也可使用重命名（`✎`）、置顶 / 取消置顶（`☆` / `★`）、删除（`×`）和刷新（`↻`）操作。置顶会话优先显示。
+**SESSIONS** 展示当前项目的最近会话；管理器会将嵌套会话归入父会话，并支持通过后代会话匹配搜索。点击会话可切换，也可使用重命名（`✎`）、置顶 / 取消置顶（`☆` / `★`）、删除（`×`）和刷新（`↻`）操作。置顶会话优先显示。
 
 标题旁的数字表示**用户提问次数**，不包含 AI 回复和工具结果。例如，`3 · 55m` 表示三次提问、55 分钟前更新。
 
@@ -55,11 +55,11 @@ pi --tui-mode fullscreen
 
 ### 资源快捷入口与 MCP
 
-展开 VIEW 后，在调用统计下方可以看到纵向排列的四类资源快捷入口：
+展开 VIEW 后，依次显示四个全宽模式行、调用统计和纵向排列的四类资源快捷入口：
 
 - **AGENTS.md**：浏览指令资源，并查看所选文件的完整正文。
-- **Skills**：浏览可用技能及其说明。
-- **Extensions**：查看安装或加载的扩展。
+- **SKILLS**：浏览可用技能及其说明。
+- **EXT**：查看安装或加载的扩展。
 - **MCP**：查看服务器配置和可用的连接状态。
 
 **MCP 状态中心**为只读界面。**已配置、已注册或已加载，不代表已经连接**；部分服务器没有可确认的连接状态。界面不展示凭据等敏感信息。连接诊断、登录和配置修改请使用 Pi 的 `/mcp` 管理器。
@@ -72,15 +72,16 @@ pi --tui-mode fullscreen
 
 ### VIEW 工具输出与 Thinking
 
-三行纵向排列的模式按钮（Normal、Compact、Hidden）共同控制工具输出和 Thinking，默认 **Compact**。
+四行纵向排列的模式按钮（Normal、Focus、Compact、Hidden）共同控制工具输出和 Thinking，默认 **Compact**。
 
 | 模式 | 工具输出 | Thinking |
 | --- | --- | --- |
 | **Normal** | 完整工具输出与详情 | 完整 Thinking 正文 |
+| **Focus** | 精简工具调用摘要 | Thinking 正文默认展开，可点击对应标题单独折叠 |
 | **Compact**（默认） | 缩进紧凑摘要 | 默认折叠为 `+ Thought · 1.3s` 这类标题；点击标题可展开完整 Thinking 正文 |
 | **Hidden** | 隐藏工具输出 | 只读展示状态与测得的耗时，不显示 Thinking 正文 |
 
-点击边栏按钮、按 **Ctrl+Shift+O**，或输入 `/tool-view normal|compact|hidden|status` 切换。选择会自动保存，并同步更新当前会话中已经显示的消息。显示模式不影响工具执行和调用统计。
+点击边栏按钮、按 **Ctrl+Shift+O**，或输入 `/tool-view normal|focus|compact|hidden|status` 切换。选择会自动保存，并同步更新当前会话中已经显示的消息。VIEW 将每个完整模式名称放在独立的全宽可点击行中，窄边栏下也保持可读。模式说明不再占用 VIEW 下方独立的一行，而是追加到俄文状态前缀 `Отображение инструментов: ...` 和切换提示中（例如 `Отображение инструментов: Focus · Thoughts open · tools compact`）。显示模式不影响工具执行和调用统计。
 
 Compact 支持 `read`、`bash`、`edit`、`write`、`grep`、`find`、`ls` 和 `codemode`。每次调用独立显示摘要，包括输出数量、可用的耗时，以及运行中 / 失败状态：
 
@@ -93,6 +94,8 @@ Compact 支持 `read`、`bash`、`edit`、`write`、`grep`、`find`、`ls` 和 `
 ```
 
 点击 `›` 可展开受支持工具的详情，包括 Codemode 脚本、内嵌调用、输出和错误；点击 `⌄` 收起并返回 Compact 摘要。第三方工具保留各自的显示方式。
+
+Focus 保留 Compact 的工具摘要，但默认展开每段 Thinking；仍可点击 Thought 标题单独折叠。
 
 Compact 的 Thinking 默认折叠。点击标题即可展开或收起，思考中与完成后都可以：
 
@@ -107,7 +110,7 @@ Compact 的 Thinking 默认折叠。点击标题即可展开或收起，思考�
 
 耗时只计算思考阶段，不包含整条回复的其他用时。不足一分钟保留一位小数，更长的用时采用 `1m05s` 形式。恢复历史会话等无法可靠计时的情况下，标题省略耗时。尚无正文时也可显示进行中标题。Hidden 始终隐藏正文。
 
-**Thinking 显示设置：** 请开启 Pi 原生 Thinking 可见性（`hideThinkingBlock: false`），以显示 Compact / Hidden 的 Thinking 标题。Pi 自带的隐藏开关（`Ctrl+T`）保持原生作用。
+**Thinking 显示设置：** 请开启 Pi 原生 Thinking 可见性（`hideThinkingBlock: false`），以显示 Focus / Compact / Hidden 的 Thinking 标题。Pi 自带的隐藏开关（`Ctrl+T`）保持原生作用。
 
 ### Tool / MCP 调用统计
 
@@ -130,9 +133,9 @@ VIEW 下方按调用来源分组：
 | 操作 | 命令 |
 | --- | --- |
 | 安装最新 npm 版本 | `pi install npm:pi-ui-extension` |
-| 固定 v1.9.10 | `pi install npm:pi-ui-extension@1.9.10` |
+| 固定 v1.10.9 | `pi install npm:pi-ui-extension@1.10.9` |
 | 从 GitHub 安装 | `pi install git:github.com/1993yihuan/pi-ui-extension` |
-| 固定 Git tag | `pi install git:github.com/1993yihuan/pi-ui-extension@v1.9.10` |
+| 固定 Git tag | `pi install git:github.com/1993yihuan/pi-ui-extension@v1.10.9` |
 | 仅当前项目安装 | `pi install --local npm:pi-ui-extension` |
 | 更新非固定版本 | `pi update --extensions` |
 | 列出已配置扩展 | `pi list` |
@@ -141,18 +144,18 @@ VIEW 下方按调用来源分组：
 
 项目级安装需要 Pi 信任当前项目。固定版本不会自动升级到后续版本。
 
-### 从 v1.9.2 或更早版本升级
+### 从更早版本升级
 
-**兼容性变更：** v1.9.3 停止支持 Pi 1.2.x。请**先将 Pi Coding Agent 升级到 >= 1.3.0，再更新本扩展**；Pi TUI 运行时也必须 >= 1.3.0。Node.js >= 22.19.0 和 fullscreen 模式的要求保持不变。
+**兼容性变更：** v1.9.3 已停止支持 Pi 1.2.x，v1.9.13 已停止支持 Pi 1.3.x，v1.10.6 已停止支持 Pi 1.4.x。请**先将 Pi Coding Agent 升级到 >= 1.5.0，再更新本扩展**；Pi TUI 运行时也必须 >= 1.5.0。Node.js >= 22.19.0 和 fullscreen 模式的要求保持不变。
 
 1. 检查 `command -v pi`、`pi --version`、`node --version` 和 `pi list`。若 npm-global 与 Bun-global 安装并存，请升级实际提供当前 `pi` 命令的安装。
 2. 使用对应安装渠道的包管理器升级 Pi，再次确认当前执行的版本。
-3. 执行 `pi install npm:pi-ui-extension@1.9.10`（项目级安装添加 `--local`），重启 Pi，并以 `pi --tui-mode fullscreen` 启动。检查全局和项目级配置，避免仍加载旧的固定版本。
+3. 执行 `pi install npm:pi-ui-extension@1.10.9`（项目级安装添加 `--local`），重启 Pi，并以 `pi --tui-mode fullscreen` 启动。检查全局和项目级配置，避免仍加载旧的固定版本。
 4. 确认边栏、Compact 工具展开及鼠标点击位置、Thinking 展开（需开启原生 Thinking 可见性）、会话切换和 Tool/MCP 统计正常。
 
-如果必须保留 Pi 1.2.x，请继续使用 v1.9.2，或使用 `pi install` 将安装来源指定为 `npm:pi-ui-extension@1.9.2`，或将 Git 来源固定到 `@v1.9.2`；保持原来的全局或项目安装范围。固定版本不会自动升级。安装成功本身不能证明宿主兼容。
+如果必须保留较旧的 Pi，请使用 `pi install` 将安装来源指定为 `npm:pi-ui-extension@1.10.5`（Pi 1.4.x）、`npm:pi-ui-extension@1.9.12`（Pi 1.3.x）或 `npm:pi-ui-extension@1.9.2`（Pi 1.2.x），或将 Git 来源固定到对应标签；保持原来的全局或项目安装范围。固定版本不会自动升级。安装成功本身不能证明宿主兼容。
 
-CI 验证的是 Node.js **22.19.0 / 24** 与 Pi SDK **1.3.0 / 1.4.0** 的组合。`>=1.3.0` 声明允许其他版本，但矩阵未逐一验证。本版本未新增会话或配置格式迁移。
+CI 验证的是 Node.js **22.19.0 / 24** 与 Pi SDK **1.5.0** 的组合。`>=1.5.0` 声明允许后续版本，但矩阵未逐一验证。本版本未新增会话或配置格式迁移。
 
 ## 常见问题
 

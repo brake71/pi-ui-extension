@@ -52,13 +52,11 @@ function findLayoutBox(box: LayoutBox, component: Component): LayoutBox | undefi
   return undefined;
 }
 
-function modeLabel(mode: ToolViewMode): string {
-  switch (mode) {
-    case "normal": return "Normal";
-    case "compact": return "Compact";
-    case "hidden": return "Hidden";
-  }
-}
+/** Labels remain readable even when the sidebar is narrow. */
+const MODE_LABELS: Record<ToolViewMode, string> = {
+  normal: "Normal", focus: "Focus", compact: "Compact", hidden: "Hidden",
+};
+
 
 type UsageColor = "dim" | "muted" | "text" | "accent" | "success";
 
@@ -113,7 +111,7 @@ export function groupUsageCounts(counts: readonly ToolUsageCount[]): Readonly<Re
   });
 }
 
-/** Three full-width mode rows above tool usage and resource shortcuts. */
+/** Four full-width mode rows above tool usage and resource shortcuts. */
 export class ToolViewPanel implements Component {
   private pressedMode: ToolViewMode | undefined;
   private pressedResource: ResourceButtonId | undefined;
@@ -136,6 +134,7 @@ export class ToolViewPanel implements Component {
   private modeAt(x: number, y: number): ToolViewMode | undefined {
     const box = this.getLayoutBox();
     if (!box || !contains(box.clip, x, y) || !contains(box.rect, x, y)) return undefined;
+
     const contentWidth = Math.max(1, Math.min(box.rect.width, this.options.getDesiredWidth()) - 4);
     const contentColumn = x - box.rect.x - 2;
     if (contentColumn < 0 || contentColumn >= contentWidth) return undefined;
@@ -242,7 +241,7 @@ export class ToolViewPanel implements Component {
       const selected = mode === currentMode;
       const marker = !connected ? "·" : selected ? "●" : "○";
       const color = mode === this.pressedMode ? "warning" : selected ? "success" : "dim";
-      return panelContent(this.theme, `${marker} ${modeLabel(mode)}`, color, contentWidth);
+      return panelContent(this.theme, `${marker} ${MODE_LABELS[mode]}`, color, contentWidth);
     });
     const usage = this.options.getUsage();
     const grouped = groupUsageCounts(usage?.counts ?? []);
@@ -283,6 +282,7 @@ export class ToolViewPanel implements Component {
     appendGroup("nested", nested);
     appendGroup("mcp", grouped.mcp);
 
+    // Mode explanation lives with the main status/notification.
     const lines = [
       panelTop(this.theme, "ОТОБРАЖЕНИЕ", renderWidth),
       ...modeRows,

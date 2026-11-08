@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Container, Text, stripTerminalSequences } from "@earendil-works/pi-tui";
@@ -9,7 +9,7 @@ import {
   getMarkdownTheme,
   initTheme,
 } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
-import { installToolViewController } from "./controller.ts";
+import { installToolViewController, writeFileAtomic } from "./controller.ts";
 
 type Handler = (event: any, ctx: any) => unknown;
 
@@ -58,8 +58,8 @@ test("applies a mode change from another context wrapper in the active session",
 
     assert.equal(controller.getMode(), "normal");
     assert.deepEqual(JSON.parse(await readFile(modeFile, "utf8")), { mode: "normal" });
-    assert.equal(statuses.at(-1), "Отображение инструментов: Normal");
-    assert.equal(notices.at(-1), "Отображение инструментов: Normal");
+    assert.equal(statuses.at(-1), "Отображение инструментов: Normal · Full thoughts & tool output");
+    assert.equal(notices.at(-1), "Отображение инструментов: Normal · Full thoughts & tool output");
     assert.deepEqual(expandedValues.slice(-2), [true, false]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -120,15 +120,21 @@ test("the single Tool View mode controls Thinking, persists once, and refreshes 
 
     await controller.setMode("normal", ctx);
     assert.equal(transformer("private thought", context), "private thought");
+    await commands.get("tool-view").handler("focus", ctx);
+    assert.equal(controller.getMode(), "focus");
+    assert.equal(notices.at(-1), "Отображение инструментов: Focus · Thoughts open · tools compact");
+    assert.deepEqual(JSON.parse(await readFile(modeFile, "utf8")), { mode: "focus" });
+    assert.equal(transformer("private thought", context), "private thought",
+      "fallback keeps full Thinking visible when the native adapter is unavailable");
     await commands.get("tool-view").handler("hidden", ctx);
     assert.match(transform("private thought"), /^Размышление · \d\.\ds$/, "Hidden has no disclosure glyph");
     assert.equal(controller.getMode(), "hidden");
     assert.deepEqual(JSON.parse(await readFile(modeFile, "utf8")), { mode: "hidden" });
-    assert.equal(refreshed, 2, "one public refresh per mode change, including historical Thinking");
-    assert.deepEqual(expanded, [true, false, true, false], "tool transcript refresh still occurs");
+    assert.equal(refreshed, 3, "one public refresh per mode change, including historical Thinking");
+    assert.deepEqual(expanded, [true, false, true, false, true, false], "tool transcript refresh still occurs");
     assert.equal(commands.has("thinking-view"), false, "no separate Thinking command");
     assert.equal(registeredToolDefinitions, 0);
-    assert.match(notices.join("\n"), /Отображение инструментов: Hidden/);
+    assert.match(notices.join("\n"), /Отображение инструментов: Hidden · Thoughts & tools hidden/);
 
     const restarted = await installToolViewController(pi, { modeFile });
     assert.equal(restarted.getMode(), "hidden", "existing mode file persists Thinking and Tools together");
@@ -207,6 +213,136 @@ test("unified Tool View warns if Pi hides Thinking natively without breaking too
   }
 });
 
+
+test("a failed mode save removes only its own temporary file and keeps the stored mode", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tool-view-mode-failure-"));
+  const modeFile = join(directory, "mode.json");
+  // A directory at the mode path makes every rename fail after the temporary file exists.
+  await mkdir(modeFile);
+  await writeFile(join(modeFile, "keep.txt"), "original");
+  const notices: string[] = [];
+  const handlers = new Map<string, Handler[]>();
+  const pi = {
+    registerToolRenderer() {},
+    registerMarkdownTransformer() {},
+    registerCommand() {},
+    registerShortcut() {},
+    getSettings: () => ({ hideThinkingBlock: false }),
+    getCommands: () => [],
+    on(name: string, callback: Handler) {
+      handlers.set(name, [...(handlers.get(name) ?? []), callback]);
+    },
+  } as any;
+  const ctx = {
+    mode: "tui",
+    sessionManager: { getSessionId: () => "current-session" },
+    ui: {
+      setStatus() {},
+      notify(message: string) { notices.push(message); },
+      getToolsExpanded: () => false,
+      setToolsExpanded() {},
+      setHiddenThinkingLabel() {},
+    },
+  } as any;
+  try {
+    const controller = await installToolViewController(pi, { modeFile });
+    for (const handler of handlers.get("session_start") ?? []) handler({}, ctx);
+    await controller.setMode("hidden", ctx);
+    assert.equal(controller.getMode(), "hidden", "the mode still applies in memory");
+    assert.match(notices.join("\n"), /не удалось сохранить настройку/);
+    assert.deepEqual(await readdir(directory), ["mode.json"], "no temporary file is left behind");
+    assert.deepEqual(await readdir(modeFile), ["keep.txt"], "the existing mode path is untouched");
+    assert.equal(await readFile(join(modeFile, "keep.txt"), "utf8"), "original");
+
+    const restarted = await installToolViewController(pi, { modeFile });
+    assert.equal(restarted.getMode(), "compact", "a failed save persists nothing");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a write that fails after the temporary file is created removes only that file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tool-view-write-failure-"));
+  const modeFile = join(directory, "mode.json");
+  const closed: string[] = [];
+  const removed: string[] = [];
+  const renamed: string[] = [];
+  const enospc = Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+  const handle = {
+    async writeFile() { throw enospc; },
+    async close() { closed.push("close"); },
+  };
+  const io = {
+    async open(path: string, flags: string, mode?: number) {
+      assert.equal(dirname(path), directory, "the temporary file lives beside the mode file");
+      assert.equal(flags, "wx", "the temporary name is claimed exclusively");
+      assert.equal(mode, 0o600);
+      return handle as any;
+    },
+    async rename(_from: string, to: string) { renamed.push(to); },
+    async rm(path: string) { removed.push(path); },
+  };
+  try {
+    await assert.rejects(writeFileAtomic(modeFile, "{}", io), (error: any) => error === enospc,
+      "the original write failure survives cleanup");
+    assert.deepEqual(renamed, [], "a partial write never replaces the mode file");
+    assert.deepEqual(closed, ["close"], "the owned handle is closed");
+    assert.equal(removed.length, 1, "only this call's own temporary file is removed");
+    assert.match(removed[0]!, new RegExp("mode\\.json\\." + process.pid + "\\.[0-9]+\\.[a-z0-9]*\\.tmp$"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("an already existing temporary file is neither overwritten nor deleted", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tool-view-eexist-"));
+  const modeFile = join(directory, "mode.json");
+  const notices: string[] = [];
+  const handlers = new Map<string, Handler[]>();
+  const pi = {
+    registerToolRenderer() {},
+    registerMarkdownTransformer() {},
+    registerCommand() {},
+    registerShortcut() {},
+    getSettings: () => ({ hideThinkingBlock: false }),
+    getCommands: () => [],
+    on(name: string, callback: Handler) {
+      handlers.set(name, [...(handlers.get(name) ?? []), callback]);
+    },
+  } as any;
+  const ctx = {
+    mode: "tui",
+    sessionManager: { getSessionId: () => "current-session" },
+    ui: {
+      setStatus() {},
+      notify(message: string) { notices.push(message); },
+      getToolsExpanded: () => false,
+      setToolsExpanded() {},
+      setHiddenThinkingLabel() {},
+    },
+  } as any;
+  const realNow = Date.now;
+  const realRandom = Math.random;
+  try {
+    // Freeze the temporary name so the collision can be reproduced on a real disk.
+    Date.now = () => 1_700_000_000_000;
+    Math.random = () => 0.5;
+    const foreign = modeFile + "." + process.pid + "." + Date.now() + "." + Math.random().toString(36).slice(2) + ".tmp";
+    await writeFile(foreign, "foreign");
+    const controller = await installToolViewController(pi, { modeFile });
+    for (const handler of handlers.get("session_start") ?? []) handler({}, ctx);
+    await controller.setMode("hidden", ctx);
+    assert.match(notices.join("\n"), /не удалось сохранить настройку/, "the EEXIST failure reaches the user");
+    assert.equal(await readFile(foreign, "utf8"), "foreign", "a file this call did not create is untouched");
+    assert.deepEqual(await readdir(directory), [basename(foreign)], "no other file was written");
+    const restarted = await installToolViewController(pi, { modeFile });
+    assert.equal(restarted.getMode(), "compact", "a failed save persists nothing");
+  } finally {
+    Date.now = realNow;
+    Math.random = realRandom;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const THINKING_ADAPTER = Symbol.for("pi-ui-extension:compact-thinking-adapter");
 const PREVIOUS_ADAPTER = Symbol.for("pi-ui-extension:thinking-click-guard");

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { createSessionCatalog } from "./catalog.ts";
+import { createSessionCatalog, SESSION_TITLE_PREVIEW_LIMIT } from "./catalog.ts";
 
 test("catalog shares unchanged summaries, reads only changed files and tracks discovery/removal", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "pi-catalog-")), directory = join(root, "sessions");
@@ -90,6 +90,40 @@ test("catalog resolves parent session paths to same-project parent IDs and ignor
     assert.equal(summaries.find(item => item.id === child.getSessionId())?.parentId, parent.getSessionId());
     assert.equal(summaries.find(item => item.id === child.getSessionId())?.parentSession, parent.getSessionFile());
     assert.equal(summaries.find(item => item.id === orphan.getSessionId())?.parentId, undefined);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("catalog retains its last good summary when a session file becomes unreadable", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-catalog-unreadable-"));
+  try {
+    const session = SessionManager.create(root, root);
+    session.appendMessage({ role: "user", content: "Kept", timestamp: 1 });
+    const path = session.getSessionFile()!;
+    const catalog = createSessionCatalog();
+    assert.equal((await catalog(root, root))[0]?.unavailable, undefined);
+    session.appendMessage({ role: "user", content: "Second question", timestamp: 2 });
+    chmodSync(path, 0o000);
+    const unreadable = await catalog(root, root);
+    assert.equal(unreadable.length, 1);
+    assert.equal(unreadable[0]?.unavailable, true);
+    assert.equal(unreadable[0]?.userPromptCount, 1);
+    assert.equal(unreadable[0]?.firstMessage, "Kept");
+    chmodSync(path, 0o600);
+    const recovered = await catalog(root, root);
+    assert.equal(recovered[0]?.unavailable, undefined);
+    assert.equal(recovered[0]?.userPromptCount, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("catalog bounds cached session titles and previews", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-catalog-preview-"));
+  try {
+    const session = SessionManager.create(root, root);
+    session.appendMessage({ role: "user", content: "A".repeat(20_000), timestamp: 1 });
+    session.appendSessionInfo("N".repeat(20_000));
+    const row = (await createSessionCatalog()(root, root)).find(item => item.id === session.getSessionId())!;
+    assert.equal(row.firstMessage, "A".repeat(SESSION_TITLE_PREVIEW_LIMIT - 1) + "…");
+    assert.equal(row.name, "N".repeat(SESSION_TITLE_PREVIEW_LIMIT - 1) + "…");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

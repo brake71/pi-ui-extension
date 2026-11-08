@@ -31,8 +31,8 @@ test("resource dialog keeps every resource row for selector scrolling", () => {
   const options = resourceDialogOptions(rows);
 
   assert.equal(options.length, rows.length);
-  assert.equal(options[0], "skill-1 — Description 1");
-  assert.equal(options[12], "skill-13 — Description 13");
+  assert.equal(options[0], "1. skill-1 — Description 1");
+  assert.equal(options[12], "13. skill-13 — Description 13");
 });
 
 test("resource dialog keeps the existing one-line description limit", () => {
@@ -41,7 +41,7 @@ test("resource dialog keeps the existing one-line description limit", () => {
     description: "x".repeat(200),
   }]);
 
-  assert.equal(options[0], `skill — ${"x".repeat(109)}…`);
+  assert.equal(options[0], `1. skill — ${"x".repeat(109)}…`);
 });
 
 test("selecting among several AGENTS files opens full content, with descriptions as fallback", async () => {
@@ -59,4 +59,20 @@ test("selecting among several AGENTS files opens full content, with descriptions
     await Promise.resolve();
     assert.equal(viewed, rows[index]!.content ?? rows[index]!.description);
   }
+});
+
+test("identical resource labels still open the selected row, not the first match", async () => {
+  const rows = [
+    { name: "AGENTS.md", description: "Context file", content: "Parent instructions" },
+    { name: "AGENTS.md", description: "Context file", content: "Project instructions" },
+  ];
+  const choices = resourceDialogOptions(rows);
+  assert.equal(new Set(choices).size, rows.length, "every selector value must be unique");
+  let viewed: string | undefined;
+  showResourceDialog({ ui: {
+    async select(_title, options) { return options[1]; },
+    async editor(_title, content) { viewed = content; return undefined; },
+  } }, "agents", rows);
+  await Promise.resolve();
+  assert.equal(viewed, "Project instructions");
 });

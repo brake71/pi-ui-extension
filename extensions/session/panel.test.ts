@@ -511,6 +511,21 @@ test("a refresh requested during an in-flight load runs once, and dispose stops 
   assert.doesNotMatch(panel.render(40).join("\n"), /Late session/);
 });
 
+test("an unavailable session keeps its last good row and flags the partial failure", async () => {
+  const { panel } = panelHarness({
+    width: 40,
+    loadSessions: async () => [{ ...session("cached", "Cached session"), unavailable: true }],
+  });
+  panel.refresh();
+  await flushAsync();
+
+  const output = panel.render(40).join("\n");
+  assert.match(output, /Cached session/);
+  assert.match(output, /временно недоступны/);
+  assert.match(panel.render(40)[0]!, /СЕССИИ ⚠/);
+  panel.dispose();
+});
+
 test("a blank failure message still shows the retry hint instead of No saved sessions", async () => {
   const loader = deferredLoader();
   const { panel, press } = panelHarness({ width: 40, loadSessions: loader.loadSessions });

@@ -137,11 +137,81 @@ test("long tool names and group labels adapt to narrow terminal widths without w
   for (const width of [16, 18, 24, 32, 48, 56]) {
     const lines = panel.render(width);
     assert.ok(lines.every((line) => visibleWidth(line) <= width), `overflow at width ${width}`);
-    assert.equal(lines.length, panel.render(56).length, "all nested rows stay visible");
+    assert.equal(lines.length, panel.render(56).length, "VIEW always uses one selector row");
     assert.doesNotMatch(lines.join("\n"), /↳/, "nested rows no longer use arrows");
     assert.match(lines.join("\n"), /999/, "nested totals remain visible when labels truncate");
   }
   panel.dispose();
+});
+
+test("VIEW mode rows remain full-width and retain precise click targets", async () => {
+  let width = 60;
+  let mode: "normal" | "focus" | "compact" | "hidden" = "compact";
+  let input: ((text: string) => unknown) | undefined;
+  const selected: string[] = [];
+  const tui = {
+    addInputListener(fn: (text: string) => unknown) { input = fn; return () => {}; },
+    requestRender() {},
+    currentLayout: undefined as any,
+  } as any;
+  const theme = { fg: (_color: string, text: string) => text } as any;
+  const panel = new ToolViewPanel(theme, {
+    tui, getDesiredWidth: () => width, getMode: () => mode, getUsage: () => ({ counts: [] }),
+    onSelect(next) { mode = next; selected.push(next); },
+  });
+  const click = async (x: number, y = 7) => {
+    input?.("\x1b[<0;" + x + ";" + y + "M");
+    input?.("\x1b[<0;" + x + ";" + y + "m");
+    await Promise.resolve();
+  };
+  const layout = () => {
+    const height = panel.render(width).length;
+    const rect = { x: 10, y: 5, width, height };
+    tui.currentLayout = { root: { component: panel, rect, clip: rect, children: [] } };
+  };
+  try {
+    for (const [row, label, value] of [[1, "Normal", "normal"], [2, "Focus", "focus"], [3, "Compact", "compact"], [4, "Hidden", "hidden"]] as const) {
+      assert.match(panel.render(60)[row]!, new RegExp(label));
+      layout();
+      await click(15, 6 + row);
+      assert.equal(selected.at(-1), value, `${label} row selects independently`);
+    }
+    const lines = panel.render(60);
+    assert.match(lines[5]!, /^├─+┤$/, "separator follows the four mode rows");
+    assert.doesNotMatch(lines.join("\n"), /Thoughts open · tools compact/);
+    for (const w of [16, 18, 24, 30, 36, 48, 60]) {
+      assert.ok(panel.render(w).every((line) => visibleWidth(line) <= w), `overflow at width ${w}`);
+    }
+  } finally { panel.dispose(); }
+});
+
+
+
+test("VIEW puts the separator immediately below the selector, without repeating the main status description", () => {
+  let italicCalls = 0;
+  const theme = {
+    fg: (_color: string, value: string) => value,
+    italic(value: string) { italicCalls++; return value; },
+  } as any;
+  const tui = { addInputListener: () => () => {}, requestRender() {} } as any;
+  const panel = new ToolViewPanel(theme, {
+    tui, getDesiredWidth: () => 60, getMode: () => "focus",
+    getUsage: () => ({ counts: [] }), onSelect() {},
+  });
+  try {
+    const wide = panel.render(60);
+    assert.match(wide[2]!, /Focus/);
+    assert.match(wide[4]!, /Hidden/);
+    assert.match(wide[5]!, /^├─+┤$/, "border follows the four mode rows");
+    assert.match(wide[6]!, /СЕЙЧАС\s+ВСЕГО/);
+    assert.doesNotMatch(wide.join("\n"), /Thoughts open · tools compact/,
+      "the description belongs only in the main Russian status/notification");
+    assert.equal(italicCalls, 0, "no caption is rendered");
+    assert.ok(wide.every((line) => visibleWidth(line) === 60));
+    const narrow = panel.render(25);
+    assert.equal(narrow.length, wide.length);
+    assert.ok(narrow.every((line) => visibleWidth(line) <= 25));
+  } finally { panel.dispose(); }
 });
 
 test("keeps the mode selector visible alongside Tool and MCP usage", () => {
@@ -149,12 +219,13 @@ test("keeps the mode selector visible alongside Tool and MCP usage", () => {
   const output = lines.join("\n");
   assert.match(lines[0] ?? "", /ОТОБРАЖЕНИЕ/);
   assert.doesNotMatch(lines[0] ?? "", /TOOL VIEW/);
-  assert.equal(lines.length, 14);
-  assert.match(lines[1] ?? "", /○ Normal/);
-  assert.match(lines[2] ?? "", /● Compact/);
-  assert.match(lines[3] ?? "", /○ Hidden/);
-  assert.equal(lines[4], `├${"─".repeat(58)}┤`, "mode separator must reach both borders with no padding");
-  assert.match(lines[5] ?? "", /СЕЙЧАС\s+ВСЕГО/);
+  assert.equal(lines.length, 15);
+  assert.match(lines[1] ?? "", /Normal/);
+  assert.match(lines[2] ?? "", /Focus/);
+  assert.match(lines[3] ?? "", /Compact/);
+  assert.match(lines[4] ?? "", /Hidden/);
+  assert.equal(lines[5], `├${"─".repeat(58)}┤`, "mode separator must reach both borders with no padding");
+  assert.match(lines[6] ?? "", /СЕЙЧАС\s+ВСЕГО/);
   assert.match(output, /ВЫЗОВЫ · 1/);
   assert.match(output, /MCP · 1/);
   assert.doesNotMatch(lines.find((line) => line.includes("ВЫЗОВЫ")) ?? "", /\d+\/\d+/);
@@ -170,7 +241,7 @@ test("keeps the mode selector visible alongside Tool and MCP usage", () => {
 
 test("vertical mode rows remain readable and individually clickable", async () => {
   let listener: TuiInputListener | undefined;
-  let selected: "normal" | "compact" | "hidden" = "compact";
+  let selected: "normal" | "focus" | "compact" | "hidden" = "compact";
   const tui = {
     addInputListener(next: TuiInputListener) { listener = next; return () => {}; },
     requestRender() {},
@@ -186,8 +257,9 @@ test("vertical mode rows remain readable and individually clickable", async () =
   });
   const lines = panel.render(18);
   assert.match(lines[1]!, /Normal/);
-  assert.match(lines[2]!, /Compact/);
-  assert.match(lines[3]!, /Hidden/);
+  assert.match(lines[2]!, /Focus/);
+  assert.match(lines[3]!, /Compact/);
+  assert.match(lines[4]!, /Hidden/);
   assert.ok(lines.every(line => visibleWidth(line) <= 18));
   tui.currentLayout = { root: {
     component: panel,
@@ -202,11 +274,13 @@ test("vertical mode rows remain readable and individually clickable", async () =
   };
   await click(0);
   assert.equal(selected, "normal");
-  await click(2);
-  assert.equal(selected, "hidden");
-  await click(1, 2);
-  assert.equal(selected, "hidden", "release on another row cancels selection");
   await click(1);
+  assert.equal(selected, "focus");
+  await click(3);
+  assert.equal(selected, "hidden");
+  await click(2, 3);
+  assert.equal(selected, "hidden", "release on another row cancels selection");
+  await click(2);
   assert.equal(selected, "compact");
   panel.dispose();
 });

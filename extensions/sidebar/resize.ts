@@ -91,6 +91,9 @@ export function installMouseResize(options: MouseResizeOptions): () => void {
   let dragging = false;
   let dragColumns = 0;
   let dragRows = 0;
+  let dragStartX = 0;
+  let dragStartWidth = 0;
+  let moved = false;
   let geometryTimer: ReturnType<typeof setInterval> | undefined;
   let previewHandle: OverlayHandle | undefined;
   let pendingX: number | undefined;
@@ -149,14 +152,27 @@ export function installMouseResize(options: MouseResizeOptions): () => void {
 
     if (mouse.release) {
       if (!dragging) return undefined;
+      const startX = dragStartX;
+      const startWidth = dragStartWidth;
+      const didMove = moved;
       cancelDrag();
-      options.commitSidebarWidth(sidebarWidthAt(mouse.x));
+      // A press and release on the same column is a click, not a resize. Pi's
+      // reported column can sit one column off getDividerX() when a clamped
+      // layout is one column wider than the terminal, so the absolute release
+      // column must never decide the width of a gesture that never moved.
+      if (!didMove) return { consume: true };
+      // Drag distance from the press position, not the release column: the same
+      // offset cancels out, so a real one-column drag still resizes by one.
+      options.commitSidebarWidth(startWidth + (startX - mouse.x));
       return { consume: true };
     }
     if (!mouse.motion && (mouse.button & 3) === 0 && (mouse.button & 64) === 0) {
       if (Math.abs(mouse.x - options.getDividerX()) > 1) return undefined;
       if (dragging) return { consume: true };
       dragging = true;
+      dragStartX = mouse.x;
+      dragStartWidth = options.tui.terminal.columns - options.getDividerX();
+      moved = false;
       dragColumns = options.tui.terminal.columns;
       dragRows = options.tui.terminal.rows;
       // Only watch geometry during a drag, including resizes with no further mouse input.
@@ -172,6 +188,7 @@ export function installMouseResize(options: MouseResizeOptions): () => void {
       return { consume: true };
     }
     if (mouse.motion && dragging) {
+      if (mouse.x !== dragStartX) moved = true;
       schedulePreview(previewXFor(mouse.x));
       return { consume: true };
     }

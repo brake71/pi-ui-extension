@@ -258,7 +258,7 @@ export function transformThinkingText(
   mode: ToolViewMode,
   getStatus?: (markdown: string, streaming: boolean) => ThinkingStatus,
 ): string {
-  if (context.messageType !== "assistant-thinking" || mode === "normal") return markdown;
+  if (context.messageType !== "assistant-thinking" || (mode === "normal" || mode === "focus")) return markdown;
   const status = getStatus?.(markdown, context.isStreaming) ?? {
     phase: context.isStreaming ? "streaming" : "complete",
   };

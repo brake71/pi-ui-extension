@@ -87,7 +87,13 @@ function harness(t: TestContext, providedStatus?: StatusFn, toolGap?: (toolName:
   const make = (
     content: unknown[],
     streaming: boolean,
-    options: { hideThinking?: boolean; transformers?: MarkdownTransformer[]; outputPad?: number } = {},
+    options: {
+      hideThinking?: boolean;
+      transformers?: MarkdownTransformer[];
+      outputPad?: number;
+      /** Pi 1.5 session entry identity, which the component carries as its own fields. */
+      history?: { messageId?: string; timestamp?: string };
+    } = {},
   ) => {
     const component = new AssistantMessageComponent(
       undefined,
@@ -97,6 +103,7 @@ function harness(t: TestContext, providedStatus?: StatusFn, toolGap?: (toolName:
       options.outputPad ?? 1,
       options.transformers ?? [transformer],
     );
+    Object.assign(component, options.history ?? {});
     component.updateContent({ role: "assistant", content, stopReason: "stop" } as any, streaming);
     return component;
   };
@@ -163,6 +170,32 @@ test("Compact Thinking streams a live title, expands to the full body, and settl
   assert.equal(collapsed.length, 2);
   assert.equal(collapsed[1]!.trim(), "+ Размышление · 1.3s");
   assert.doesNotMatch(collapsed.join("\n"), /plugin version/);
+});
+
+test("Focus opens each Thinking run by default but honors per-run folds during updates", (t) => {
+  const { make, setMode } = harness(t);
+  setMode("focus");
+  const component = make([{ type: "thinking", thinking: "FOCUS_FULL_THOUGHT" }], false);
+  assert.match(lines(component)[1]!, /− Размышление/);
+  assert.match(plain(component), /FOCUS_FULL_THOUGHT/);
+
+  clickLine(component, /Размышление/);
+  assert.match(lines(component)[1]!, /\+ Размышление/);
+  assert.doesNotMatch(plain(component), /FOCUS_FULL_THOUGHT/);
+
+  component.updateContent({
+    role: "assistant", stopReason: "stop",
+    content: [{ type: "thinking", thinking: "FOCUS_FULL_THOUGHT updated" }],
+  } as any, true);
+  assert.doesNotMatch(plain(component), /FOCUS_FULL_THOUGHT/, "streaming must preserve a manual fold");
+  clickLine(component, /Думает/);
+  assert.match(plain(component), /FOCUS_FULL_THOUGHT updated/);
+
+  setMode("compact");
+  const next = make([{ type: "thinking", thinking: "NEW_COMPACT_THOUGHT" }], false);
+  assert.doesNotMatch(plain(next), /NEW_COMPACT_THOUGHT/, "Compact remains folded by default");
+  const hidden = make([{ type: "thinking", thinking: "HIDDEN_NATIVE_THOUGHT" }], false, { hideThinking: true });
+  assert.doesNotMatch(plain(hidden), /HIDDEN_NATIVE_THOUGHT/, "Pi's native hide setting wins");
 });
 
 test("only the Thinking title toggles it; body clicks, wheel, and other buttons do not", (t) => {
@@ -660,6 +693,41 @@ test("installation is gated by Pi's component shape, not by an exact version lis
   } finally {
     host.updateContent = update;
   }
+});
+
+test("the expanded Thinking body passes Pi 1.5 messageId and timestamp on to every transformer", (t) => {
+  const { make, transformer } = harness(t);
+  type Seen = { markdown: string; messageId?: string; timestamp?: string; isStreaming: boolean };
+  const seen: Seen[] = [];
+  const thirdParty: MarkdownTransformer = (markdown, context) => {
+    if (context.messageType === "assistant-thinking" && markdown.includes("forwarded body")) {
+      const history = context as { messageId?: string; timestamp?: string };
+      seen.push({ markdown, messageId: history.messageId, timestamp: history.timestamp, isStreaming: context.isStreaming });
+    }
+    return markdown;
+  };
+  const history = { messageId: "session-entry-0001", timestamp: "2025-08-01T10:20:30.000Z" };
+  const component = make([{ type: "thinking", thinking: "forwarded body text" }, { type: "text", text: "Done." }],
+    false, { transformers: [transformer, thirdParty], history });
+
+  assert.ok(lines(component).some((line) => /Размышление$/.test(line)), "Compact collapses the run to its title");
+  assert.equal(clickLine(component, /Размышление$/)?.handled, true, "the title opens the rebuilt body");
+  // The body Markdown renders on the next pass, which is when its transformers run.
+  assert.match(lines(component).join("\n"), /forwarded body text/, "the rebuilt body renders");
+  assert.ok(seen.length > 0, "the third-party transformer runs on the rebuilt Thinking Markdown");
+  for (const context of seen) {
+    assert.equal(context.messageId, history.messageId, "messageId survives the rebuild");
+    assert.equal(context.timestamp, history.timestamp, "timestamp survives the rebuild");
+    assert.equal(context.isStreaming, false, "the rebuilt body keeps the streaming flag");
+  }
+
+  // Live messages carry no entry identity: the keys stay absent and nothing throws.
+  const live = make([{ type: "thinking", thinking: "live body text" }], true,
+    { transformers: [transformer, thirdParty] });
+  assert.equal(plain(live).includes("live body text"), false, "a streaming run keeps only its title");
+  const expandedLive = lines(live).length;
+  assert.equal(clickLine(live, /Думает/)?.handled, true, "a live title still toggles");
+  assert.ok(lines(live).length > expandedLive, "the live body opens without a session entry");
 });
 
 test("an older click-guard generation is unwrapped on upgrade", (t) => {

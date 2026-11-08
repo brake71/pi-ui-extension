@@ -2,8 +2,28 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { installSidebar } from "./index.ts";
-import { installPriorityInputListener } from "./resize.ts";
+import { installMouseResize, installPriorityInputListener } from "./resize.ts";
 import type { SidebarPanelDefinition } from "./registry.ts";
+
+test("default sidebar width is 20% while keeping min/max and draggable geometry", () => {
+  for (const [columns, expected] of [[120, 24], [160, 32], [200, 40], [400, 72]]) {
+    const root = { render: () => [], invalidate() {} };
+    const tui: any = {
+      [Symbol.for("@earendil-works/pi-tui/viewport")]: true,
+      terminal: { columns, rows: 40 }, layoutRoot: root,
+      addInputListener: () => () => {},
+      setLayoutRoot(next: any) { this.layoutRoot = next; },
+      requestRender() {},
+    };
+    const controller = installSidebar(tui, { fg: (_: string, text: string) => text } as any, []);
+    try {
+      assert.equal(controller.mounted, true);
+      assert.equal(tui.layoutRoot.entries[2].basis, expected, `initial width at ${columns} columns`);
+      assert.equal(tui.layoutRoot.entries[2].maxSize, 72, "maximum sidebar width unchanged");
+    } finally { controller.dispose(); }
+    assert.equal(tui.layoutRoot, root);
+  }
+});
 
 test("sidebar ignores hidden divider hits and cancels drags after terminal resize", async () => {
   let overlays = 0, hidden = 0;
@@ -25,7 +45,9 @@ test("sidebar ignores hidden divider hits and cancels drags after terminal resiz
     assert.equal(input("\x1b[<0;80;5M"), undefined);
     assert.equal(overlays, 0);
     tui.terminal.columns = 160;
-    assert.deepEqual(input("\x1b[<0;142;5M"), { consume: true });
+    const dividerColumn = tui.terminal.columns - tui.layoutRoot.entries[2].basis;
+    assert.deepEqual(input(`\x1b[<0;${dividerColumn};5M`), { consume: true });
+    assert.deepEqual(input("\x1b[<32;130;5M"), { consume: true });
     assert.deepEqual(input("\x1b[<0;130;5m"), { consume: true });
     assert.equal(tui.layoutRoot.entries[2].basis, 30);
     assert.equal(hidden, 1);
@@ -185,5 +207,49 @@ test("sidebar disposal does not replace a later host-owned layout root", () => {
   tui.layoutRoot = laterRoot;
   controller.dispose();
   assert.equal(tui.layoutRoot, laterRoot);
+  assert.equal(listeners.size, 0);
+});
+test("resize commits only a real drag, from the drag distance rather than the release column", () => {
+  const commits: number[] = [];
+  const listeners = new Set<any>();
+  const dividerX = 64; // 120 columns showing a 56-column sidebar: Pi reports 64.
+  const tui: any = {
+    terminal: { columns: 120, rows: 40 },
+    inputListeners: listeners,
+    addInputListener(fn: any) { listeners.add(fn); return () => listeners.delete(fn); },
+    requestRender() {},
+    showOverlay() { return { hide() {} }; },
+  };
+  const uninstall = installMouseResize({
+    tui,
+    preview: { render: () => ["│"], invalidate() {} },
+    isVisible: () => true,
+    getDividerX: () => dividerX,
+    clampSidebarWidth: (width) => Math.min(72, Math.max(18, Math.min(width, tui.terminal.columns - 64))),
+    commitSidebarWidth: (width) => { commits.push(width); },
+  });
+  const input = (data: string): unknown => [...listeners][0]?.(data);
+  try {
+    // The visible divider can render one column right of getDividerX(); a click
+    // anywhere in that hit area must never resize.
+    for (const column of [dividerX - 1, dividerX, dividerX + 1]) {
+      assert.deepEqual(input(`\x1b[<0;${column};5M`), { consume: true });
+      assert.deepEqual(input(`\x1b[<0;${column};5m`), { consume: true });
+    }
+    assert.deepEqual(commits, [], "a press and release on one column commits nothing");
+
+    // One column of real movement still resizes by exactly one column.
+    input(`\x1b[<0;${dividerX + 1};5M`);
+    input(`\x1b[<32;${dividerX + 2};5M`);
+    assert.deepEqual(input(`\x1b[<0;${dividerX + 2};5m`), { consume: true });
+    assert.deepEqual(commits, [55]);
+
+    // Dragging away and back commits the unchanged width so the caller can ignore it.
+    input(`\x1b[<0;${dividerX + 1};5M`);
+    input(`\x1b[<32;${dividerX + 6};5M`);
+    input(`\x1b[<32;${dividerX + 1};5M`);
+    input(`\x1b[<0;${dividerX + 1};5m`);
+    assert.deepEqual(commits, [55, 56]);
+  } finally { uninstall(); }
   assert.equal(listeners.size, 0);
 });

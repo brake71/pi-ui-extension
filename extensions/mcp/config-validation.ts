@@ -1,6 +1,7 @@
-// Pi 1.3/1.4 do not export validateMcpServerConfig from the package root.
-// Keep this read-only acceptance check aligned with their MCP config validator;
-// never resolve credentials, execute commands, or return raw validation errors.
+// The supported Pi SDK exports no MCP config validator from its package root
+// (1.5.0 still keeps it in dist/core/mcp-servers.js), so this read-only
+// acceptance check stays aligned with Pi's own validator; never resolve
+// credentials, execute commands, or return raw validation errors.
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

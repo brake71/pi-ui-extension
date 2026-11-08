@@ -13,14 +13,6 @@ const theme = {
   bold: (value: string) => value,
 } as any;
 
-test("reports an actionable compatibility error on Pi without the renderer API", async () => {
-  await assert.rejects(
-    installToolViewController({ registerMarkdownTransformer() {} } as any,
-      { modeFile: join(tmpdir(), "pi-ui-missing-renderer-test.json") }),
-    /Update Pi.*this extension/,
-  );
-});
-
 test("uses one official renderer resolver without replacing or executing Pi tools", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tool-renderer-"));
   const handlers = new Map<string, Array<(event: any, ctx: any) => void>>();
@@ -148,6 +140,14 @@ test("uses one official renderer resolver without replacing or executing Pi tool
     assert.match(running.render(80).join(""), /^    ⎿  … Running$/, "streaming uses the same branch without inventing output");
     assert.equal(counters.nativeCall, 0, "compact must not run native renderer unnecessarily");
 
+    await controller.setMode("focus", ctx);
+    const focused = render(read, {}, args);
+    assert.match(focused, /  ›  read  example\.ts/);
+    assert.match(focused, /2 строки/);
+    assert.doesNotMatch(focused, /NATIVE CALL|NATIVE RESULT/,
+      "Focus must retain Compact tool summaries by default");
+    assert.equal(counters.nativeCall, 0);
+
     await controller.setMode("normal", ctx);
     const normal = render(read, state, args);
     assert.match(normal, /NATIVE CALL/);
@@ -259,7 +259,7 @@ test("uses one official renderer resolver without replacing or executing Pi tool
 
     await controller.setMode("compact", ctx);
     assert.deepEqual(JSON.parse(await readFile(join(directory, "mode.json"), "utf8")), { mode: "compact" });
-    assert.equal(expandedChanges.length, 16, "every mode change should refresh historical transcript rows");
+    assert.equal(expandedChanges.length, 18, "every mode change should refresh historical transcript rows");
     assert.equal(commands.has("tool-view"), true);
     assert.equal(counters.registered, 0);
   } finally {

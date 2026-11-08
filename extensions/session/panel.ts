@@ -27,6 +27,8 @@ export type SessionListItem = {
   readonly userPromptCount: number | undefined;
   readonly current: boolean;
   readonly pinned?: boolean;
+  /** Last good summary retained when the session file cannot be read. */
+  readonly unavailable?: boolean;
 };
 
 export type SessionPanelOptions = {
@@ -126,7 +128,7 @@ function renderSessionTitleRow(theme: Theme, title: string, renderWidth: number,
 
 function formatSessionSummary(session: SessionListItem, width: number, now: number): string {
   // When the sidebar is narrow, title readability wins over secondary metadata.
-  const marker = `${session.current ? "● " : "○ "}${session.pinned ? "★" : ""}`;
+  const marker = `${session.current ? "● " : "○ "}${session.pinned ? "★" : ""}${session.unavailable ? "⚠" : ""}`;
   const metadata = formatRelativeTime(session.modified, now);
   const metadataWidth = visibleWidth(metadata) + 1;
   const showMetadata = width - visibleWidth(marker) - metadataWidth >= 14;
@@ -162,6 +164,7 @@ export class SessionPanel implements Component {
   private managePressed = false;
 
   private sessions: readonly SessionListItem[] = [];
+  private unavailable = 0;
   private loading = true;
   private error: string | undefined;
   private disposed = false;
@@ -410,6 +413,7 @@ export class SessionPanel implements Component {
       .then((sessions) => {
         if (this.disposed) return;
         this.sessions = [...sessions];
+        this.unavailable = sessions.filter((session) => session.unavailable).length;
         this.error = undefined;
         this.loading = false;
       })
@@ -456,10 +460,12 @@ export class SessionPanel implements Component {
     // Sits under the retained rows, so row hit-testing keeps its index mapping.
     if (this.error) {
       body.push(panelContent(this.theme, `⚠ Ошибка: ${this.error} · повтор ↻`, "warning", contentWidth));
+    } else if (this.unavailable > 0) {
+      body.push(panelContent(this.theme, `⚠ ${this.unavailable} сессий временно недоступны; показаны сохранённые сводки`, "warning", contentWidth));
     }
 
     return [
-      renderSessionTitleRow(this.theme, this.loading || this.loadInFlight ? "СЕССИИ …" : this.error ? "СЕССИИ ⚠" : "СЕССИИ ↻", renderWidth, this.clearPressed, this.managePressed, Boolean(this.options.onOpenManager)),
+      renderSessionTitleRow(this.theme, this.loading || this.loadInFlight ? "СЕССИИ …" : this.error || this.unavailable > 0 ? "СЕССИИ ⚠" : "СЕССИИ ↻", renderWidth, this.clearPressed, this.managePressed, Boolean(this.options.onOpenManager)),
       ...body,
       panelBottom(this.theme, renderWidth),
     ].map((line) => truncateToWidth(line, renderWidth, ""));

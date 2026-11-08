@@ -14,6 +14,8 @@ export type SessionSummary = {
   readonly firstMessage: string;
   readonly modified: Date;
   readonly userPromptCount: number;
+  /** The file could not be read this refresh; these fields are the last good summary. */
+  readonly unavailable?: boolean;
 };
 type CachedSummary = { readonly snapshot: SessionFileSnapshot; readonly summary: SessionSummary };
 const sameFile = (a: SessionFileSnapshot, b: SessionFileSnapshot): boolean =>
@@ -22,7 +24,40 @@ const expandPath = (path: string): string => resolve(path === "~" ? homedir() : 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
-/** A sidebar needs summaries, not the SDK list's concatenation of every message body. */
+/** Cached session titles are UI previews, never full message bodies. */
+export const SESSION_TITLE_PREVIEW_LIMIT = 256;
+
+function limitTitle(value: string): string {
+  if (value.length <= SESSION_TITLE_PREVIEW_LIMIT) return value;
+  let prefix = value.slice(0, SESSION_TITLE_PREVIEW_LIMIT - 1);
+  // Do not leave half a surrogate pair in the cached preview.
+  if (/[\uD800-\uDBFF]$/.test(prefix)) prefix = prefix.slice(0, -1);
+  return `${prefix}…`;
+}
+
+function previewUserContent(content: unknown): string {
+  if (typeof content === "string") return limitTitle(content);
+  if (!Array.isArray(content)) return "";
+  let preview = "";
+  let hasTextBlock = false;
+  for (const block of content) {
+    const value = record(block);
+    if (value?.type !== "text" || typeof value.text !== "string") continue;
+    const separator = hasTextBlock ? " " : "";
+    hasTextBlock = true;
+    const remaining = SESSION_TITLE_PREVIEW_LIMIT + 1 - preview.length;
+    if (remaining <= 0) break;
+    preview += separator.slice(0, remaining) + value.text.slice(0, Math.max(0, remaining - separator.length));
+    if (preview.length > SESSION_TITLE_PREVIEW_LIMIT) break;
+  }
+  return limitTitle(preview);
+}
+
+/**
+ * A sidebar needs summaries, not the SDK list's concatenation of every message body.
+ * I/O failures propagate so the caller can keep the last good summary instead of
+ * treating a temporarily unreadable file as a deleted session.
+ */
 async function readSummary(path: string, expected: SessionFileSnapshot): Promise<SessionSummary | undefined> {
   let file: FileHandle | undefined;
   try {
@@ -47,7 +82,7 @@ async function readSummary(path: string, expected: SessionFileSnapshot): Promise
           parentSession = typeof entry.parentSession === "string" ? entry.parentSession : undefined;
           continue;
         }
-        if (entry.type === "session_info") name = typeof entry.name === "string" ? entry.name.trim() || undefined : undefined;
+        if (entry.type === "session_info") name = typeof entry.name === "string" ? limitTitle(entry.name.trim()) || undefined : undefined;
         if (entry.type !== "message") continue;
         const message = record(entry.message);
         if (message?.role === "user") userPromptCount++;
@@ -56,11 +91,7 @@ async function readSummary(path: string, expected: SessionFileSnapshot): Promise
           : typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;
         if (Number.isFinite(timestamp)) lastActivity = Math.max(lastActivity ?? 0, timestamp);
         if (!firstMessage && message.role === "user") {
-          firstMessage = typeof message.content === "string" ? message.content
-            : Array.isArray(message.content) ? message.content.flatMap(block => {
-              const value = record(block);
-              return value?.type === "text" && typeof value.text === "string" ? [value.text] : [];
-            }).join(" ") : "";
+          firstMessage = previewUserContent(message.content);
         }
       }
       // Destroying a FileHandle stream also closes its descriptor, even with
@@ -77,8 +108,6 @@ async function readSummary(path: string, expected: SessionFileSnapshot): Promise
       lines.close();
       input.destroy();
     }
-  } catch {
-    return undefined;
   } finally {
     await file?.close();
   }
@@ -105,17 +134,24 @@ export function createSessionCatalog() {
       await Promise.all(Array.from({ length: Math.min(8, paths.length) }, async () => {
         while (next < paths.length) {
           const path = paths[next++]!;
+          const cached = cache.get(path);
           try {
             const info = await stat(path);
             if (!info.isFile()) { cache.delete(path); continue; }
-            const cached = cache.get(path);
             const summary = cached && sameFile(cached.snapshot, info) ? cached.summary : await readSummary(path, info);
             if (summary) {
               cache.set(path, { snapshot: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs }, summary });
               // Custom/shared directories must not expose another project's sessions.
               if (summary.cwd && expandPath(summary.cwd) === expandPath(cwd)) summaries.push(summary);
             } else cache.delete(path);
-          } catch { cache.delete(path); }
+          } catch (error) {
+            // A transient read failure must not hide a session: keep the last good
+            // summary, marked unavailable, until the file is readable again. A deleted
+            // file (ENOENT) and a file that was never read still leave the list.
+            if (cached && (error as NodeJS.ErrnoException).code !== "ENOENT") {
+              summaries.push({ ...cached.summary, unavailable: true });
+            } else cache.delete(path);
+          }
         }
       }));
       const byPath = new Map(summaries.map(summary => [resolve(summary.path), summary.id]));

@@ -12,7 +12,9 @@ The extension composes three responsive panels in Pi's fullscreen terminal UI:
 - **CTX** — compact context usage and expandable composition estimates.
 - **VIEW** — unified tool/Thinking modes, direct/nested/MCP usage, and resource shortcuts.
 
-The sidebar supports mouse events, wheel scrolling, terminal resizing, and scrollable panels in smaller spaces. Its owned panels share render output by width within each layout frame; the cache is cleared at the next root layout pass, so model, usage, and theme updates remain live. Regular TUI is not a supported host layout. Footer rendering reports the working directory and Git branch and clips long paths to fit the terminal.
+Sidebar width is kept in two values: the user's *preferred* width, which is the only one persisted to `pi-ui-extension/ui-layout.json`, and the *displayed* width, which is `clampSidebarWidth()` applied to the preference for the current terminal. The stored width remains the preference even when starting in a narrow terminal, so widening restores it; a press and release on the unchanged width is a click and saves nothing. Resizing is decided by the gesture, not by the release column: a genuine drag commits the press width plus the pointer's travel, so a visible divider that renders one column off `getDividerX()` cannot shift or overwrite the stored width. Only a completed drag that changes the width updates the preference and saves it (debounced, flushed on dispose); terminal resize and narrow starts re-clamp displayed width alone. Saves use a `wx`-claimed temporary file next to the target, then rename it. Missing, oversized, corrupt or out-of-range values fall back to the 22% default, and read/write failures are swallowed so a layout file cannot break the sidebar.
+
+The sidebar supports mouse events, wheel scrolling, terminal resizing, and scrollable panels in smaller spaces. Its owned panels share render output by width within each layout frame; the cache is cleared at the next root layout pass, so model, usage, theme and elapsed-time updates remain live. Regular TUI is not a supported host layout. Footer rendering reports the working directory and Git branch and clips long paths to fit the terminal.
 
 Resource shortcuts inspect current project/Pi instruction, skill, extension, and MCP resources. They do not attempt to load or connect missing resources.
 
@@ -24,7 +26,7 @@ Selection overlays retain keyboard and mouse controls; multi-page content is rea
 
 ## Session management and safety
 
-The quick session list favors the current session and pinned sessions; pins persist as IDs in `pi-ui-extension/session-pins.json` under the Pi agent directory. Pins do not save message bodies. The quick sidebar supports `☆`/`★` without opening `/sessions-manager`, with lower-priority buttons hidden when space is limited.
+The quick session list favors the current session and pinned sessions; nested sessions are grouped beneath their parents in the manager and hidden from the quick list. Manager search includes descendants. Pins persist as IDs in `pi-ui-extension/session-pins.json` under the Pi agent directory. Pins do not save message bodies. The quick sidebar supports `☆`/`★` without opening `/sessions-manager`, with lower-priority buttons hidden when space is limited.
 
 The visible session number counts **top-level user question messages** from a session's JSONL history, not all Pi messages. Assistant messages, tool results and nested operations are not counted. The sidebar and advanced manager share a session catalog: each refresh discovers files and checks identity, size, mtime and ctime, but only new or changed histories are streamed again. A single pass extracts the title, activity time and question count without retaining all assistant/tool bodies. Files changed during a read are discarded and retried on a later refresh; unavailable histories are omitted. Destructive commands continue to use fresh SDK discovery and the independent safety checks below, never the display cache as deletion authority.
 
@@ -54,7 +56,7 @@ Pi emits `before_agent_start` for user prompts and idle custom-triggered runs. T
 
 ## Thinking display and measured duration
 
-The VIEW selector (`Normal`, `Compact`, `Hidden`) is shared across tool transcript and assistant Thinking presentation; there is no second Thinking selector or persistence file. The mode is stored in `tool-view-mode.json`, and changing it refreshes previously rendered content in the current session.
+The four full-width vertical VIEW modes (`Normal`, `Focus`, `Compact`, `Hidden`) are shared across tool transcript and assistant Thinking presentation; there is no second Thinking selector or persistence file. The mode is stored in `tool-view-mode.json`, and changing it refreshes previously rendered content in the current session.
 
 - **Normal** keeps native tool transcripts and complete Thinking.
 - **Compact** defaults to a collapsed title: a live Braille indicator with `Thinking` while the run streams, then `+ Thought · 1.3s` (or `−` while expanded). Supported built-in tools use concise summaries.
@@ -74,7 +76,7 @@ Pi skips a Thinking run with no text yet, so a run that has only emitted `thinki
 
 Normal keeps Pi's native body and click handler. The display uses Pi's public `registerMarkdownTransformer()` and `setHiddenThinkingLabel()` APIs. The component adapter is shape-gated: it only rewrites region children of components built with this extension's transformer, refuses unknown Markdown/region shapes, unwraps its own previous patch generation on `/reload` (including the older click-guard generation), and lets incompatible Pi layouts fall back to the title-only transformer and native interaction. Compatible host layouts remain enabled across Pi version updates; an exact-version whitelist no longer disables working Thought clicks after an upgrade. Installation fails closed: when a marker is present but `updateContent` is no longer the patch that marker recorded, another patch sits on top, so nothing is unwrapped, nothing is re-wrapped, and `installCompactThinkingAdapter()` returns `false` rather than stacking onto or breaking someone else's patch.
 
-VIEW controls display only: reasoning settings, transcript source content, tool execution and stored session data are not altered.
+VIEW controls display only: reasoning settings, transcript source content, tool execution and stored session data are not altered. The Russian interface uses `Отображение инструментов: ...` as the mode status/notification prefix; mode labels and Thinking/tool descriptions remain as documented above.
 
 ## Compact tool presentation and guarded spacing
 
@@ -98,11 +100,11 @@ Output line counts use `line/lines` (or `out` as a narrow-screen fallback), whil
 
 Supported built-in tools, **including Codemode**, can be clicked to expand Pi's **native** details without leaving Compact. Collapsed Codemode shows just the tool name plus nested-call status/count, output size and duration. Its input script line count is intentionally omitted. An expanded Codemode shows the native script, nested tool calls and arguments, output and errors; clicking again restores the two-line Compact summary. The native renderer retains its own expanded state and display logic. Normal still uses Pi's full native rendering; Hidden removes transcript rows without cancelling execution or usage accounting.
 
-**Why a host UI adapter exists:** Pi 1.3.0 and 1.4.0 self-rendered tool components insert a leading blank row before each tool. Public tool renderer APIs cannot control that space. Compact therefore uses a deliberately limited compatibility adapter to remove **exactly one expected blank row** for renderers owned by this extension, and adjusts the mouse y-coordinate so click expansion still targets the right row. It does not add or remove Thinking rows or change third-party, Normal or Hidden layouts; the expanded Thinking body only reads whether the guard is active to know if the tool row after it still supplies that blank.
+**Why a host UI adapter exists:** Pi 1.5.0 self-rendered tool components insert a leading blank row before each tool. Public tool renderer APIs cannot control that space. Compact therefore uses a deliberately limited compatibility adapter to remove **exactly one expected blank row** for renderers owned by this extension, and adjusts the mouse y-coordinate so click expansion still targets the right row. It does not add or remove Thinking rows or change third-party, Normal or Hidden layouts; the expanded Thinking body only reads whether the guard is active to know if the tool row after it still supplies that blank.
 
 The adapter:
 
-- Accepts compatible host method layouts, checked against Pi 1.3.0/1.4.0, without an exact-version whitelist.
+- Accepts compatible host method layouts, checked as a runtime shape contract on the supported Pi SDK, without an exact-version whitelist.
 - Validates expected render/mouse method shape before patching; incompatible or previously patched shapes fail closed.
 - Accounts for the difference between unbundled SDK (`event.y - 1`) and the official minified Pi CLI (`event.y-1`). The bundled CLI may use a different class instance from the project SDK.
 - Resolves the **running** official `dist/bundle/cli.js` executable and patches the classes exported by its sibling `dist/bundle/index.js`, which shares runtime chunks with the CLI. Also patches the SDK classes if distinct. Unknown executable layouts keep their native behavior.
@@ -138,6 +140,6 @@ MCP status UI never displays commands, raw endpoint URLs, headers, tokens, envir
 
 ## Dependency and release considerations
 
-The Pi coding-agent and TUI packages are peer dependencies to avoid bundling duplicate host instances. The code still protects against the real CLI's separately bundled UI runtime via explicit host shape checks. Pi **1.3.0** is the minimum supported version; CI tests Node 22.19.0/24 × Pi SDK 1.3.0/1.4.0.
+The Pi coding-agent and TUI packages are peer dependencies to avoid bundling duplicate host instances. The code still protects against the real CLI's separately bundled UI runtime via explicit host shape checks. Pi **1.5.0** is the minimum supported version; CI tests Node 22.19.0/24 against Pi SDK 1.5.0.
 
 Published npm tarballs contain runtime TypeScript sources but not `*.test.ts`. The full test suite and release workflow are described in [Development](DEVELOPMENT.md); there is no need to ship these architecture notes in the npm tarball when the main README links to the GitHub copies.

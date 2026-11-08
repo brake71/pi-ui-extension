@@ -219,7 +219,7 @@ export async function openSessionManager(options: SessionManagerOptions): Promis
     const current = getSessionPage(candidates, "", sort, page);
     page = current.page;
     const labelFor = (session: SessionListItem, index: number, indent = "") =>
-      `${indent}${index + 1}. ${session.pinned ? "★ " : ""}${session.current ? "● " : ""}${safeLabel(session.title)} · ${session.userPromptCount ?? "?"} ${pluralize(session.userPromptCount ?? 0, ["вопрос", "вопроса", "вопросов"])}`;
+      `${indent}${index + 1}. ${session.pinned ? "★ " : ""}${session.current ? "● " : ""}${session.unavailable ? "⚠ " : ""}${safeLabel(session.title)} · ${session.userPromptCount ?? "?"} ${pluralize(session.userPromptCount ?? 0, ["вопрос", "вопроса", "вопросов"])}`;
     const rows: Array<{ label: string; session?: SessionListItem; groupId?: string }> = [];
     const append = (session: SessionListItem, index: number, indent = "") => {
       rows.push({ label: labelFor(session, index, indent), session });
@@ -235,6 +235,7 @@ export async function openSessionManager(options: SessionManagerOptions): Promis
     };
     current.items.forEach((session, index) => append(session, index));
     const labels = rows.map(row => row.label);
+    const unavailable = sessions.filter((session) => session.unavailable).length;
     const actions = [
       "⌕ Найти / сбросить поиск",
       `↕ Сортировка: ${SORT_CHOICES.find((choice) => choice.sort === sort)!.label}`,
@@ -245,7 +246,8 @@ export async function openSessionManager(options: SessionManagerOptions): Promis
     ];
     const choice = await ui.select(
       `Сессии · ${current.total}/${sessions.length} · ${page + 1}/${current.pages}${query ? ` · Поиск: ${safeLabel(query)}` : ""}` +
-        (loadError ? ` · ⚠ Ошибка загрузки: ${safeLabel(loadError)}` : ""),
+        (loadError ? ` · ⚠ Ошибка загрузки: ${safeLabel(loadError)}` : "") +
+        (unavailable > 0 ? ` · ⚠ ${unavailable} сессий временно недоступны` : ""),
       [...labels, ...actions],
     );
     if (!choice || choice === "Закрыть") return;

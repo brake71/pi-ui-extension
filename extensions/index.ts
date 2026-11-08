@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createDialogUI } from "./dialogs/index.ts";
 import { confirmSessionCleanup } from "./dialogs/session-cleanup.ts";
 import { previewSessionCleanup } from "./session/cleanup-preview.ts";
@@ -27,10 +27,12 @@ import {
   createActiveSessionLease,
   readActiveSessionPaths,
   sessionFileUnchanged,
+  snapshotClearableSession,
   type SessionFileSnapshot,
 } from "./session/safety.ts";
 import { createSessionCatalog } from "./session/catalog.ts";
 import { openSessionManager, readSessionPins, sortedSessions, toggleSessionPin } from "./session/manager.ts";
+import { renameSavedSession, sameSessionFile } from "./session/rename.ts";
 import type { SessionListItem } from "./session/panel.ts";
 import { installToolViewController } from "./tool-view/controller.ts";
 import type { ToolViewMode } from "./tool-view/types.ts";
@@ -45,15 +47,18 @@ const SESSION_DELETE_COMMAND = "sidebar-session-delete";
 const SESSION_CLEAR_COMMAND = "sidebar-session-clear-others";
 const SESSION_MANAGER_COMMAND = "sessions-manager";
 const SESSION_PINS_FILE = join(getAgentDir(), "pi-ui-extension", "session-pins.json");
+const SIDEBAR_LAYOUT_FILE = join(getAgentDir(), "pi-ui-extension", "ui-layout.json");
 const ACTIVE_SESSIONS_DIR = join(getAgentDir(), "pi-ui-extension", "active-sessions");
 
 export type ResourceEntry = { name: string; description: string; content?: string };
 
 /** Format every resource row for the scrollable resource picker. */
 export function resourceDialogOptions(rows: readonly ResourceEntry[]): string[] {
-  return rows.map((row) => {
+  // The selector returns a label, not an index. Prefix each row with an
+  // ordinal so identical names/descriptions still select different content.
+  return rows.map((row, index) => {
     const desc = row.description.length > 110 ? `${row.description.slice(0, 109)}…` : row.description;
-    return `${row.name} — ${desc}`;
+    return `${index + 1}. ${row.name} — ${desc}`;
   });
 }
 
@@ -284,6 +289,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
       title: session.name ?? session.firstMessage,
       modified: session.modified,
       userPromptCount: session.userPromptCount,
+      unavailable: session.unavailable,
       current: session.id === currentId,
       pinned: pinned.has(session.id),
     })), "recent");
@@ -363,6 +369,7 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
         ctx.ui.notify("Не указан ID сессии", "error");
         return;
       }
+      if (!canManageSessions(ctx)) return;
 
       try {
         const sessions = await SessionManager.list(ctx.cwd, ctx.sessionManager.getSessionDir());
@@ -373,17 +380,42 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           return;
         }
         const title = target.name ?? target.firstMessage;
+        // Captured before the dialog: the file must still be this exact file afterwards.
+        const before = await snapshotClearableSession(target.path);
+        if (!before) {
+          ctx.ui.notify("Файл сессии отсутствует или не является обычным файлом", "error");
+          refreshSessions();
+          return;
+        }
         const nextName = await createDialogUI(ctx.ui).input("Переименовать сессию", title);
         const next = nextName?.trim();
         if (!next) return;
 
+        // Revalidate after the dialog: idle, same session, same file, unchanged content.
+        if (!canManageSessions(ctx)) return;
         if (target.id === ctx.sessionManager.getSessionId()) {
+          // Pi writes the live session itself, so appends are expected here; only a
+          // removed or replaced file means the rename would land elsewhere.
+          if (!(await sameSessionFile(target.path, before))) {
+            ctx.ui.notify("Файл сессии удалён или заменён при переименовании; изменения не сохранены", "warning");
+            refreshSessions();
+            return;
+          }
           pi.setSessionName(next);
-        } else {
-          SessionManager.open(target.path).appendSessionInfo(next);
-          refreshSessions();
+          ctx.ui.notify("Сессия переименована.", "info");
+          return;
         }
-        ctx.ui.notify("Сессия переименована.", "info");
+        const renamed = await renameSavedSession({
+          cwd: ctx.cwd,
+          sessionDir: ctx.sessionManager.getSessionDir(),
+          sessionId: target.id,
+          path: target.path,
+          name: next,
+          before,
+          activePaths: () => readActiveSessionPaths(ACTIVE_SESSIONS_DIR),
+        });
+        refreshSessions();
+        ctx.ui.notify(renamed.ok ? "Сессия переименована." : renamed.message, renamed.ok ? "info" : renamed.level);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         ctx.ui.notify(`Не удалось переименовать сессию: ${message}`, "error");
@@ -413,7 +445,12 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           refreshSessions();
           return;
         }
-        const before = statSync(target.path);
+        const before = await snapshotClearableSession(target.path);
+        if (!before) {
+          ctx.ui.notify("Session file is missing or is not a regular file; deletion cancelled", "warning");
+          refreshSessions();
+          return;
+        }
         const confirmed = await createDialogUI(ctx.ui).confirm(
           "Удалить сессию",
           `Переместить «${target.name ?? target.firstMessage ?? target.id}» в корзину? Её можно восстановить из системной корзины.`,
@@ -427,9 +464,9 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           ctx.ui.notify("Сессия используется другим процессом Pi; удаление отменено.", "warning");
           return;
         }
-        const after = statSync(target.path);
-        if (before.dev !== after.dev || before.ino !== after.ino ||
-            before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+        // Match bulk cleanup: lstat rejects links, and ctime detects same-size
+        // rewrites even when a concurrent process restores mtime.
+        if (!(await sessionFileUnchanged(target.path, before))) {
           ctx.ui.notify("Сессия изменилась во время подтверждения; удаление отменено.", "warning");
           return;
         }
@@ -678,8 +715,9 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
               });
           },
         });
-        sidebar = installSidebar(tui, theme, panels);
-        ctx.ui.setStatus("pi-ui-extension:sidebar", undefined);
+        // Wiring only: the sidebar owns the file format and all width policy.
+        sidebar = installSidebar(tui, theme, panels, { layoutPath: SIDEBAR_LAYOUT_FILE });
+        ctx.ui.setStatus("pi-ui-extension:sidebar", sidebar.mounted ? undefined : "Боковая панель доступна только в полноэкранном режиме");
       },
       () => {
         sidebar?.dispose();

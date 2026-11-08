@@ -1,28 +1,53 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export type DeleteSessionResult =
-  | { readonly ok: true; readonly method: "trash" }
+  | { readonly ok: true; readonly method: "trash" | "recycle" }
   | { readonly ok: false; readonly error: string };
 
-function trashCommand(path: string): { readonly command: string; readonly args: readonly string[] } {
-  if (process.platform !== "win32") return { command: "trash", args: [path] };
-  const escapedPath = path.replace(/'/g, "''");
-  const script = `$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escapedPath}', [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)`;
-  return {
-    command: "powershell.exe",
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
-  };
+/**
+ * PowerShell one-liner: the only recoverable delete Windows ships.
+ * The path is embedded as a single-quoted literal, so apostrophes are doubled.
+ */
+function recycleScript(path: string): string {
+  return `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${path.replace(/'/g, "''")}','OnlyErrorDialogs','SendToRecycleBin')`;
 }
 
-/** Only use recoverable deletion. A trash failure must never trigger permanent deletion. */
-export async function deleteSessionFile(pi: ExtensionAPI, path: string): Promise<DeleteSessionResult> {
+function firstLine(text: string): string {
+  const line = text.trim().split(/\r?\n/).filter((entry) => entry.trim().length > 0);
+  return line.length > 0 ? line[0]! : "";
+}
+
+async function trashCommand(pi: ExtensionAPI, path: string): Promise<DeleteSessionResult> {
   try {
-    const { command, args } = trashCommand(path);
-    const result = await pi.exec(command, [...args], { timeout: 10_000 });
+    const result = await pi.exec("trash", [path], { timeout: 10_000 });
     if (result.code === 0) return { ok: true, method: "trash" };
-    const hint = (result.stderr || result.stdout || "").trim().split(/\r?\n/, 1)[0];
-    return { ok: false, error: hint || `trash exited with code ${result.code}` };
+    return { ok: false, error: firstLine(result.stderr) || firstLine(result.stdout) || `trash exited with code ${result.code}` };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+async function windowsRecycleBin(pi: ExtensionAPI, path: string): Promise<DeleteSessionResult> {
+  try {
+    const result = await pi.exec(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", recycleScript(path)],
+      { timeout: 20_000 },
+    );
+    if (result.code === 0) return { ok: true, method: "recycle" };
+    return { ok: false, error: firstLine(result.stderr) || firstLine(result.stdout) || `powershell exited with code ${result.code}` };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Only use recoverable deletion. A failed trash command must never trigger permanent deletion.
+ * On Windows, try the cross-platform trash command first, then the Recycle Bin.
+ */
+export async function deleteSessionFile(pi: ExtensionAPI, path: string): Promise<DeleteSessionResult> {
+  const trashed = await trashCommand(pi, path);
+  if (trashed.ok || process.platform !== "win32") return trashed;
+  const recycled = await windowsRecycleBin(pi, path);
+  return recycled.ok ? recycled : { ok: false, error: `trash: ${trashed.error}; recycle bin: ${recycled.error}` };
 }

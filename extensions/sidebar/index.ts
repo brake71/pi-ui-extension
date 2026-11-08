@@ -8,6 +8,7 @@ import {
   type ViewportTUI,
 } from "@earendil-works/pi-tui";
 import { createSidebarScrollView } from "./layout.ts";
+import { createSidebarLayoutStore } from "./layout-store.ts";
 import { createSidebarRenderCache, SidebarLayoutRoot } from "./render-cache.ts";
 import { installMouseResize, SidebarDivider } from "./resize.ts";
 import type {
@@ -37,6 +38,13 @@ type MountedPanel = {
   readonly definition: SidebarPanelDefinition<unknown>;
   readonly instance: SidebarPanelInstance<unknown>;
   readonly entry: MutableVStack["entries"][number] | undefined;
+};
+
+export type SidebarOptions = {
+  /** Persisted layout file. Without it the sidebar keeps the width only in memory. */
+  readonly layoutPath?: string;
+  /** Test hook; production uses the store's default debounce. */
+  readonly layoutSaveDelayMs?: number;
 };
 
 export type SidebarController = {
@@ -87,6 +95,7 @@ export function installSidebar(
   tui: TUI,
   theme: Theme,
   definitions: readonly SidebarPanelDefinition[],
+  options: SidebarOptions = {},
 ): SidebarController {
   if (!isViewportTUI(tui)) return noopController();
 
@@ -99,12 +108,31 @@ export function installSidebar(
   // a split layout over an unknown root or disrupt the normal transcript.
   if (!isComponent(previousRoot)) return noopController();
 
-  let sidebarWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.round(tui.terminal.columns * SIDEBAR_RATIO));
   const clampSidebarWidth = (width: number): number => Math.min(
     MAX_SIDEBAR_WIDTH,
     Math.max(MIN_SIDEBAR_WIDTH, Math.min(Math.trunc(width), tui.terminal.columns - MIN_MAIN_WIDTH)),
   );
-  sidebarWidth = clampSidebarWidth(sidebarWidth);
+  // `preferredWidth` is the user's own width and the only persisted value;
+  // `sidebarWidth` is what the current terminal can show. A terminal resize
+  // narrows the latter only, so a temporarily small window never overwrites
+  // the saved preference.
+  let preferredWidth = clampSidebarWidth(Math.max(
+    MIN_SIDEBAR_WIDTH,
+    Math.round(tui.terminal.columns * SIDEBAR_RATIO),
+  ));
+  const layoutStore = options.layoutPath === undefined
+    ? undefined
+    : createSidebarLayoutStore({
+      path: options.layoutPath,
+      min: MIN_SIDEBAR_WIDTH,
+      max: MAX_SIDEBAR_WIDTH,
+      ...(options.layoutSaveDelayMs === undefined ? {} : { saveDelayMs: options.layoutSaveDelayMs }),
+    });
+  const storedWidth = layoutStore?.readSidebarWidth();
+  // The stored width is already validated to an integer inside the same range as
+  // the clamp; keep it as the preference so a narrow start never shrinks it.
+  if (storedWidth !== undefined) preferredWidth = storedWidth;
+  let sidebarWidth = clampSidebarWidth(preferredWidth);
   const getSidebarWidth = () => sidebarWidth;
   const mountedPanels = new Map<string, MountedPanel>();
   const createdInstances: SidebarPanelInstance<unknown>[] = [];
@@ -145,6 +173,21 @@ export function installSidebar(
       entry: entry?.component === instance.component ? entry : undefined,
     });
   });
+  // Declared before the frame callback can run; assigned once the split root is built.
+  let sidebarEntry: MutableHStack["entries"][number] | undefined;
+  function setDisplayedWidth(width: number, requestRender: boolean): void {
+    if (width === sidebarWidth || !sidebarEntry) return;
+    sidebarWidth = width;
+    sidebarEntry.basis = width;
+    if (requestRender) tui.requestRender();
+  }
+  let lastColumns = tui.terminal.columns;
+  function syncWidthToTerminal(): void {
+    if (tui.terminal.columns === lastColumns) return;
+    lastColumns = tui.terminal.columns;
+    // Runs at the start of a layout frame, before entries are measured.
+    setDisplayedWidth(clampSidebarWidth(preferredWidth), false);
+  }
   function syncPanelLayout(): void {
     for (const panel of mountedPanels.values()) {
       const maxSize = resolveMaxSize(panel.definition.layout, tui);
@@ -180,16 +223,19 @@ export function installSidebar(
       maxSize: MAX_SIDEBAR_WIDTH,
       visible: ({ width }) => width >= MIN_SPLIT_WIDTH,
     },
-  ], () => { renderCache.beginFrame(); syncPanelLayout(); });
+  ], () => { renderCache.beginFrame(); syncWidthToTerminal(); syncPanelLayout(); });
   const splitEntries = (splitRoot as unknown as { entries?: MutableHStack["entries"] }).entries;
-  const sidebarEntry = Array.isArray(splitEntries) && splitEntries[2]?.component === sidebarScroll
+  sidebarEntry = Array.isArray(splitEntries) && splitEntries[2]?.component === sidebarScroll
     ? splitEntries[2] : undefined;
+  // Only a completed drag changes the preference; this is the single save path.
   const applySidebarWidth = (width: number): void => {
     const next = clampSidebarWidth(width);
+    // An in-place press/release ends on the displayed width; saving it would turn
+    // a terminal-limited width into the preference and undo the stored one.
     if (next === sidebarWidth || !sidebarEntry) return;
-    sidebarWidth = next;
-    sidebarEntry.basis = next;
-    tui.requestRender();
+    preferredWidth = next;
+    layoutStore?.saveSidebarWidth(next);
+    setDisplayedWidth(next, true);
   };
   let uninstallMouseResize: () => void = () => {};
   try {
@@ -218,6 +264,7 @@ export function installSidebar(
     for (const instance of createdInstances.reverse()) {
       try { instance.dispose?.(); } catch { /* Continue cleaning up. */ }
     }
+    layoutStore?.dispose();
     return noopController();
   }
 
@@ -242,6 +289,7 @@ export function installSidebar(
       if (disposed) return;
       disposed = true;
       uninstallMouseResize();
+      layoutStore?.dispose();
       for (const panel of mountedPanels.values()) {
         try { panel.instance.dispose?.(); } catch { /* Continue releasing the remaining panels. */ }
       }

@@ -64,9 +64,9 @@ test("entry wires early/late MCP status into restored and live usage without dou
     branch.push({ type: "message", message: { role: "toolResult", toolCallId: "native-1", toolName: "mcp__native_mcp__ping", details: {} } });
     await emit("tool_execution_end", { toolCallId: "native-1", toolName: "mcp__native_mcp__ping", isError: false, result: { details: {} } });
     assert.match(output(), /native_mcp\s+1\/1/);
-    // Pi 1.2 also sends before_agent_start for custom-triggered runs.
+    // Custom-triggered runs also send before_agent_start.
     // A new run resets exchange counts but preserves saved session totals.
-    idle = false; // Starting a run is already busy inside this event in Pi 1.2.
+    idle = false; // Starting a run is already busy while this event runs.
     await emit("before_agent_start", {
       messageType: "custom",
       message: { customType: "automation", content: "continue", display: false },

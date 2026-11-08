@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +11,6 @@ const nativeEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { loadMcpConfig } = await import(new URL("./extensions/mcp/config.js", nativeEntry).href) as {
   loadMcpConfig(options: { agentDir: string; cwd: string; projectTrusted: boolean }): LoadedMcpConfig;
 };
-const nativeVersion: string = JSON.parse(readFileSync(new URL("../package.json", nativeEntry), "utf8")).version;
 
 function fixture(run: (agent: string, project: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "pi-mcp-config-"));
@@ -180,8 +179,7 @@ test("UTF-8 BOM in global and trusted project configs is accepted without warnin
     assert.deepEqual(configuredMcpServers(agent, project, false), {
       servers: [{ name: "docs", source: "global", enabled: true }], warnings: [],
     });
-    // Pi 1.3 cannot parse BOM; the plugin intentionally supports it on both peers.
-    if (!nativeVersion.startsWith("1.3.")) compareNative(agent, project);
+    compareNative(agent, project);
     writeFileSync(join(project, ".pi", "mcp.json"), '\uFEFF{"credential-secret":');
     const malformed = configuredMcpServers(agent, project, true);
     assert.deepEqual(malformed.warnings, ["Invalid project MCP configuration"]);
