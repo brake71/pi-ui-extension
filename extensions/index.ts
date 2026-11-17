@@ -716,7 +716,14 @@ export default async function piUiExtension(pi: ExtensionAPI): Promise<void> {
           },
         });
         // Wiring only: the sidebar owns the file format and all width policy.
-        sidebar = installSidebar(tui, theme, panels, { layoutPath: SIDEBAR_LAYOUT_FILE });
+        sidebar = installSidebar(tui, theme, panels, {
+          layoutPath: SIDEBAR_LAYOUT_FILE,
+          context: {
+            getUsage: () => ctx.getContextUsage(),
+            getModel: () => ctx.model?.id ?? "no-model",
+            getThinkingLevel: () => pi.getThinkingLevel(),
+          },
+        });
         ctx.ui.setStatus("pi-ui-extension:sidebar", sidebar.mounted ? undefined : "Боковая панель доступна только в полноэкранном режиме");
       },
       () => {

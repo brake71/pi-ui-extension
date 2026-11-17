@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderLayoutFrame } from "@earendil-works/pi-tui/dist/layout.js";
+import { sliceByColumn, stripTerminalSequences } from "@earendil-works/pi-tui";
 import piUiExtension from "../index.ts";
 
 test("entry wires early/late MCP status into restored and live usage without double counting", async () => {
@@ -101,6 +102,24 @@ test("entry wires early/late MCP status into restored and live usage without dou
     expandToolView();
     status(["early"]);
     assert.match(output(), /early\s+0\/1/);
+    // Exercise the actual entry-point wiring, not just installSidebar test options.
+    ctx.model = { id: "wired-model" };
+    ctx.getContextUsage = () => ({ percent: 42 });
+    tui.currentLayout = renderLayoutFrame(tui.layoutRoot, 240, 100, () => {});
+    const railX = tui.currentLayout.root.children[2].rect.x;
+    for (const suffix of ["M", "m"]) {
+      for (const listener of listeners) {
+        if (listener(`\x1b[<0;${railX + 2};100${suffix}`)?.consume) break;
+      }
+    }
+    const compact = renderLayoutFrame(tui.layoutRoot, 240, 100, () => {});
+    assert.equal(tui.layoutRoot.entries[2].basis, 4);
+    const box = compact.root.children[2]!.rect;
+    const statusText = compact.lines.map(line => stripTerminalSequences(sliceByColumn(line, box.x, box.width)).trim()).join("");
+    assert.match(statusText, /wired-model/);
+    assert.match(statusText, /off/);
+    assert.match(statusText, /42%/);
+    assert.doesNotMatch(statusText, /КОНТЕКСТ/);
   } finally {
     await emit("session_shutdown");
     await rm(directory, { recursive: true, force: true });
